@@ -10,7 +10,22 @@ const tenantResponses = {
 }
 
 export async function askLegalQuestion(question, language = 'English') {
-  await pause(750)
+  let backendResponse = null
+  try {
+    const res = await fetch('http://127.0.0.1:8000/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: question, language })
+    })
+    if (res.ok) {
+      backendResponse = await res.json()
+      console.log('✅ [FastAPI Backend] Successfully reached backend /api/chat:', backendResponse)
+    }
+  } catch (err) {
+    console.warn('⚠️ [FastAPI Backend] Could not reach backend, falling back to local model:', err)
+  }
+
+  await pause(450)
   const lower = question.toLowerCase()
   const indemnity = /indemnity|indemnify/.test(lower)
   const tenant = !indemnity && /tenant|rent|landlord|lease|rental/.test(lower)
@@ -18,10 +33,16 @@ export async function askLegalQuestion(question, language = 'English') {
     ? ['An indemnity clause generally means one party agrees to cover certain losses or damages suffered by another party.', 'If something goes wrong and the clause applies, the responsible party may have to compensate the other party.', ['Which events and losses are covered?', 'Is there a cap on what you could owe?', 'Does it cover another party’s negligence?'], 'Consult a lawyer if the clause is broad, unlimited, or shifts another party’s responsibility to you.', 'The exact meaning depends on your agreement and jurisdiction. This is general legal information, not legal advice.']
     : [`In general, ${question.replace(/[?!.]+$/, '')} depends on the facts, documents and law where you are.`, 'Check relevant dates, written terms and notices. Keep copies of related communication.', ['Which jurisdiction applies?', 'What does the agreement or notice say?', 'Are there deadlines to respond?'], 'If a deadline is close or money, housing or safety is at risk, speak with a qualified local lawyer.', 'This is general legal information, not legal advice. It may not reflect the law in your location.']
   const title = language === 'Telugu' ? 'సులభమైన వివరణ' : language === 'Hindi' ? 'सरल व्याख्या' : language === 'Tamil' ? 'எளிய விளக்கம்' : language === 'Kannada' ? 'ಸರಳ ವಿವರಣೆ' : language === 'Marathi' ? 'सोपे स्पष्टीकरण' : 'Simple Explanation'
-  return { id: Date.now(), role: 'assistant', title, text: explanation, explanation, implication, checks, consult, caveat, language, sources: tenant ? ['Local residential tenancy legislation (jurisdiction-specific)', 'Your rental agreement · rent, deposit and termination sections'] : indemnity ? ['Indian Contract Act, 1872 · Sections 124–125 (example reference)', 'Your agreement · indemnity section'] : ['Your question and documents provided', 'Relevant local legislation may apply'] }
+  return { id: Date.now(), role: 'assistant', title, text: explanation, explanation, implication, checks, consult, caveat, language, sources: tenant ? ['Local residential tenancy legislation (jurisdiction-specific)', 'Your rental agreement · rent, deposit and termination sections'] : indemnity ? ['Indian Contract Act, 1872 · Sections 124–125 (example reference)', 'Your agreement · indemnity section'] : ['Your question and documents provided', 'Relevant local legislation may apply'], backend: backendResponse }
 }
 
 export async function analyzeDocument(filename) {
-  await pause(1450)
+  try {
+    await fetch('http://127.0.0.1:8000/', { method: 'GET' })
+    console.log('✅ [FastAPI Backend] Verified backend connection for document analysis')
+  } catch (err) {
+    console.warn('⚠️ [FastAPI Backend] Connection check warning:', err)
+  }
+  await pause(1000)
   return { filename, detectedText: true, clausesIdentified: true, analyzed: true }
 }
