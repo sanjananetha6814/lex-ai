@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, AudioLines, Award, Bookmark, Briefcase, Building2, Calendar, Check, ChevronDown, CircleHelp, Clipboard, Clock, FileCheck2, FileSearch, FileText, Filter, Globe2, Heart, Info, Languages, LockKeyhole, MapPin, Menu, MessageCircle, Mic, Moon, MoreHorizontal, Phone, Plus, Scale, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Star, Sun, ThumbsDown, ThumbsUp, Upload, UserRoundCheck, Video, X } from 'lucide-react'
-import { askLegalQuestion, uploadAndAnalyzeDocument } from './services/mockApi.js'
+import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser } from './services/mockApi.js'
 
 const initialMessages = [
   { id: 1, role: 'user', text: 'What does an indemnity clause mean?' },
@@ -23,7 +23,27 @@ export default function LexAI() {
   const [voice, setVoice] = useState('idle')
   const [lawyersList, setLawyersList] = useState(directory)
   const [selectedLawyer, setSelectedLawyer] = useState(() => directory[0])
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const stored = window.sessionStorage?.getItem('lexai_user')
+      if (stored) return JSON.parse(stored)
+    } catch {}
+    return {
+      id: 1,
+      email: 'alex.morgan@workspace.lexai',
+      role: 'USER',
+      profile: { full_name: 'Alex Morgan', city: 'Bengaluru' }
+    }
+  })
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
   const notify = (message) => setToast(message)
+
+  useEffect(() => {
+    fetchCurrentUser().then(user => {
+      if (user) setCurrentUser(user)
+    })
+  }, [])
 
   useEffect(() => {
     fetch(`${API_BASE}/lawyers`)
@@ -98,6 +118,22 @@ export default function LexAI() {
     finally { setThinking(false) }
   }
 
+  const displayName = currentUser?.profile?.full_name || currentUser?.email?.split('@')[0] || 'Alex Morgan'
+  const initials = displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'AM'
+  const isDemo = currentUser?.email === 'alex.morgan@workspace.lexai'
+
+  const handleLogout = () => {
+    logoutUser()
+    const demoUser = {
+      id: 1,
+      email: 'alex.morgan@workspace.lexai',
+      role: 'USER',
+      profile: { full_name: 'Alex Morgan', city: 'Bengaluru' }
+    }
+    setCurrentUser(demoUser)
+    notify('Signed out. Returned to demo workspace.')
+  }
+
   if (!entered) return <Landing enter={() => navigate('home')} demo={(question) => typeof question === 'string' && question.trim() ? ask(question) : navigate('chat')} />
   return <div className={`app product ${dark ? 'dark' : ''}`}>
     <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
@@ -106,7 +142,7 @@ export default function LexAI() {
       <span className="side-label">WORKSPACE</span>
       <nav>{[['home','Overview',MessageCircle],['chat','Chat',MessageCircle],['documents','Documents',FileText],['saved','Saved answers',Bookmark],['lawyers','Lawyer connect',UserRoundCheck]].map(([id,label,Icon]) => <button key={id} className={`side-link ${view === id || (id === 'lawyers' && (view === 'lawyer-profile' || view === 'consultation')) ? 'selected' : ''}`} onClick={() => navigate(id)}><Icon size={16} />{label}</button>)}</nav>
       <span className="side-label recent-label">RECENT</span><button className="recent-link" onClick={() => navigate('chat')}>● Indemnity clause, simply explained</button><button className="recent-link" onClick={() => navigate('chat')}>● Tenant rights and notice periods</button>
-      <div className="side-bottom"><div className="side-privacy"><ShieldCheck size={16} /><span><strong>Your privacy matters</strong><small>Documents are processed securely</small></span></div><button className={`side-link ${view === 'settings' ? 'selected' : ''}`} onClick={() => navigate('settings')}><Settings size={16} />Settings</button><button className="user-mini" onClick={() => navigate('settings')}><i>AM</i><span><strong>Alex Morgan</strong><small>Personal workspace</small></span><MoreHorizontal size={17} /></button></div>
+      <div className="side-bottom"><div className="side-privacy"><ShieldCheck size={16} /><span><strong>Your privacy matters</strong><small>Documents are processed securely</small></span></div><button className={`side-link ${view === 'settings' ? 'selected' : ''}`} onClick={() => navigate('settings')}><Settings size={16} />Settings</button><button className="user-mini" onClick={() => { setAuthMode('login'); setAuthModalOpen(true); }} title="Click to switch account or sign in"><i>{initials}</i><span><strong>{displayName}</strong><small>{currentUser?.role === 'LAWYER' ? 'Advocate Profile' : isDemo ? 'Demo Workspace' : 'Personal Workspace'}</small></span><MoreHorizontal size={17} /></button></div>
     </aside>
     {mobileOpen && <button className="scrim" onClick={() => setMobileOpen(false)} aria-label="Close navigation" />}
     <main className={`main-content main-shell view-${view}`}>
@@ -137,23 +173,32 @@ export default function LexAI() {
           <div className="top-actions">
             <button className="privacy-chip" onClick={() => navigate('settings')}><Shield size={14} /> Documents are private</button>
             <button className="icon-button theme" aria-label="Toggle color mode" onClick={() => setDark(!dark)}>{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
-            <button className="avatar-small" onClick={() => navigate('settings')} aria-label="Alex Morgan workspace settings">AM</button>
+            <button className="avatar-small" onClick={() => { setAuthMode('login'); setAuthModalOpen(true); }} aria-label="Account Settings & Authentication" title={`${displayName} (${currentUser?.email}) · Click to switch account`}>{initials}</button>
           </div>
         </div>
       </header>
       <div className="content" key={view}>
-        {view === 'home' && <Home ask={ask} navigate={navigate} voice={voice} startVoice={startVoice} saved={saved} />}
+        {view === 'home' && <Home ask={ask} navigate={navigate} voice={voice} startVoice={startVoice} saved={saved} displayName={displayName} onOpenAuth={() => { setAuthMode('login'); setAuthModalOpen(true); }} />}
         {view === 'chat' && <Chat messages={messages} ask={ask} thinking={thinking} language={language} setLanguage={setLanguage} voice={voice} startVoice={startVoice} toggleSaved={toggleSaved} copy={copy} regenerate={regenerate} navigate={navigate} notify={notify} />}
         {view === 'documents' && <Documents file={file} fileState={fileState} analysisData={analysisData} upload={upload} sample={sample} ask={ask} onNavigate={navigate} />}
         {view === 'saved' && <Saved answers={saved} toggleSaved={toggleSaved} copy={copy} navigate={navigate} />}
         {view === 'lawyers' && <Lawyers lawyers={lawyersList} notify={notify} onViewProfile={(l) => navigate('lawyer-profile', l)} onRequestConsultation={(l) => navigate('consultation', l)} />}
         {view === 'lawyer-profile' && <LawyerProfile lawyer={selectedLawyer} onBack={() => navigate('lawyers')} onRequestConsultation={(l) => navigate('consultation', l)} />}
         {view === 'consultation' && <ConsultationRequest lawyer={selectedLawyer} onBack={() => navigate('lawyer-profile', selectedLawyer)} notify={notify} navigate={navigate} />}
-        {view === 'settings' && <SettingsPage language={language} setLanguage={setLanguage} dark={dark} setDark={setDark} notify={notify} />}
+        {view === 'settings' && <SettingsPage language={language} setLanguage={setLanguage} dark={dark} setDark={setDark} notify={notify} currentUser={currentUser} displayName={displayName} initials={initials} onOpenAuth={(mode = 'login') => { setAuthMode(mode); setAuthModalOpen(true); }} onLogout={handleLogout} />}
       </div>
       <footer className="app-disclaimer">LexAI provides legal information, not legal advice. AI complements professional lawyers rather than replacing them.</footer>
     </main>
     {toast && <div className="toast" role="status"><Check size={15} />{toast}</div>}
+    <AuthModal
+      isOpen={authModalOpen}
+      onClose={() => setAuthModalOpen(false)}
+      initialMode={authMode}
+      onAuthSuccess={(user) => {
+        setCurrentUser(user)
+      }}
+      notify={notify}
+    />
   </div>
 }
 
@@ -175,11 +220,83 @@ function Landing({ enter, demo }) {
 }
 
 function SidebarIcon() { return <Scale size={17} /> }
-function Home({ ask, navigate, voice, startVoice, saved }) {
-  const [query,setQuery]=useState('')
-  const send=(e)=>{e.preventDefault();if(query.trim()){ask(query);setQuery('')}}
-  return <div className="home-view"><div className="welcome"><div><span className="kicker">WEDNESDAY, OCTOBER 14</span><h1>Good afternoon, Alex <em>✳</em></h1><p>How can LexAI help you today?</p><small>Understand legal information in simple language.</small></div><div className="welcome-seal"><SidebarIcon /></div></div><form className="ask-box" onSubmit={send}><div><Sparkles size={16} /><textarea value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ask a legal question…" aria-label="Ask a legal question" onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey)send(e)}} /></div><footer><div><button type="button" onClick={()=>navigate('documents')}><Upload size={14}/> Upload document</button><button type="button" onClick={startVoice} className={voice==='listening'?'listening':''}><Mic size={14}/>{voice==='listening'?'Listening…':'Voice question'}</button></div><button className="submit" disabled={!query.trim()}>Ask LexAI <Send size={14}/></button></footer></form><div className="quiet-privacy"><ShieldCheck size={13}/> Your question stays in this private workspace <span>·</span> General legal information, not legal advice</div><div className="actions-title"><div><span className="kicker">START WITH WHAT YOU NEED</span><h2>How can we help?</h2></div><button onClick={()=>navigate('chat')}>Open chat <ArrowRight size={13}/></button></div><div className="quick-grid">{[['Understand a document','Rental agreements, notices, contracts',FileText,'documents'],['Ask a legal question','Get a straightforward explanation',CircleHelp,'chat'],['Check my rights','Explore general rights and duties',ShieldCheck,'tenant'],['Find a lawyer','Connect with a verified professional',UserRoundCheck,'lawyers']].map(([title,sub,Icon,to])=><button key={title} onClick={()=>to==='tenant'?ask('What are my rights as a tenant?'):navigate(to)}><span><Icon size={18}/></span><div><b>{title}</b><small>{sub}</small></div><ArrowRight size={15}/></button>)}</div><div className="home-bottom"><section className="recent-panel"><span className="kicker">PICK UP WHERE YOU LEFT OFF</span><h2>Recent conversations</h2><button onClick={()=>navigate('chat')}><Sparkles size={16}/><span><b>What does an indemnity clause mean?</b><small>Today · General information</small></span><ArrowRight size={14}/></button><button onClick={()=>navigate('chat')}><FileCheck2 size={16}/><span><b>Rental notice period explained</b><small>Yesterday · Tenant rights</small></span><ArrowRight size={14}/></button></section><section className="mini-trust"><ShieldCheck size={17}/><span className="kicker">A NOTE ON TRUST</span><h3>AI helps you get oriented.<br/>Your judgment comes first.</h3><p>Use LexAI to understand information and prepare questions. For advice on your circumstances, talk to a qualified lawyer.</p><button onClick={()=>navigate('settings')}>How we handle privacy <ArrowRight size={13}/></button></section></div>{saved.length>0&&<button className="saved-nudge" onClick={()=>navigate('saved')}><Bookmark size={14}/>{saved.length} saved answers <ArrowRight size={13}/></button>}</div>
-  return <div className="home-view"><div className="welcome"><div><span className="kicker">WEDNESDAY, OCTOBER 14</span><h1>Good afternoon, Alex <em>✳</em></h1><p>How can LexAI help you today?</p><small>Understand legal information in simple language.</small></div><div className="welcome-seal"><SidebarIcon /></div></div><form className="ask-box" onSubmit={send}><div><Sparkles size={16} /><textarea value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ask a legal question…" aria-label="Ask a legal question" onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey)send(e)}} /></div><footer><div><button type="button" onClick={()=>navigate('documents')}><Upload size={14}/> Upload document</button><button type="button" onClick={startVoice} className={voice==='listening'?'listening':''}><Mic size={14}/>{voice==='listening'?'Listening…':'Voice question'}</button></div><button className="submit" disabled={!query.trim()}>Ask LexAI <Send size={14}/></button></footer></form><div className="quiet-privacy"><ShieldCheck size={13}/> Your question stays in this private workspace <span>·</span> General legal information, not legal advice</div><div className="actions-title"><div><span className="kicker">START WITH WHAT YOU NEED</span><h2>How can we help?</h2></div><button onClick={()=>navigate('chat')}>Open chat <ArrowRight size={13}/></button></div><div className="quick-grid">{[['Understand a document','Rental agreements, notices, contracts',FileText,'documents'],['Ask a legal question','Get a straightforward explanation',CircleHelp,'chat'],['Check my rights','Explore general rights and duties',ShieldCheck,'tenant'],['Find a lawyer','Connect with a verified professional',UserRoundCheck,'lawyers']].map(([title,sub,Icon,to])=><button key={title} onClick={()=>to==='tenant'?ask('What are my rights as a tenant?'):navigate(to)}><span><Icon size={18}/></span><div><b>{title}</b><small>{sub}</small></div><ArrowRight size={15}/></button>)}</div><div className="home-bottom"><section className="recent-panel"><span className="kicker">PICK UP WHERE YOU LEFT OFF</span><h2>Recent conversations</h2><span className="more-button" aria-hidden="true"><MoreHorizontal size={17}/></span><button onClick={()=>navigate('chat')}><Sparkles size={16}/><span><b>What does an indemnity clause mean?</b><small>Today · General information</small></span><ArrowRight size={14}/></button><button onClick={()=>navigate('chat')}><FileCheck2 size={16}/><span><b>Rental notice period explained</b><small>Yesterday · Tenant rights</small></span><ArrowRight size={14}/></button></section><section className="mini-trust"><ShieldCheck size={17}/><span className="kicker">A NOTE ON TRUST</span><h3>AI helps you get oriented.<br/>Your judgment comes first.</h3><p>Use LexAI to understand information and prepare questions. For advice on your circumstances, talk to a qualified lawyer.</p><button onClick={()=>navigate('settings')}>How we handle privacy <ArrowRight size={13}/></button></section></div>{saved.length>0&&<button className="saved-nudge" onClick={()=>navigate('saved')}><Bookmark size={14}/>{saved.length} saved answers <ArrowRight size={13}/></button>}</div>
+function Home({ ask, navigate, voice, startVoice, saved, displayName }) {
+  const [query, setQuery] = useState('')
+  const send = (e) => { e.preventDefault(); if (query.trim()) { ask(query); setQuery('') } }
+  const firstName = displayName ? displayName.split(' ')[0] : 'there'
+  return (
+    <div className="home-view">
+      <div className="welcome">
+        <div>
+          <span className="kicker">WEDNESDAY, OCTOBER 14</span>
+          <h1>Good afternoon, {firstName} <em>✳</em></h1>
+          <p>How can LexAI help you today?</p>
+          <small>Understand legal information in simple language.</small>
+        </div>
+        <div className="welcome-seal"><SidebarIcon /></div>
+      </div>
+      <form className="ask-box" onSubmit={send}>
+        <div>
+          <Sparkles size={16} />
+          <textarea value={query} onChange={e => setQuery(e.target.value)} placeholder="Ask a legal question…" aria-label="Ask a legal question" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) send(e) }} />
+        </div>
+        <footer>
+          <div>
+            <button type="button" onClick={() => navigate('documents')}><Upload size={14} /> Upload document</button>
+            <button type="button" onClick={startVoice} className={voice === 'listening' ? 'listening' : ''}><Mic size={14} />{voice === 'listening' ? 'Listening…' : 'Voice question'}</button>
+          </div>
+          <button className="submit" disabled={!query.trim()}>Ask LexAI <Send size={14} /></button>
+        </footer>
+      </form>
+      <div className="quiet-privacy"><ShieldCheck size={13} /> Your question stays in this private workspace <span>·</span> General legal information, not legal advice</div>
+      <div className="actions-title">
+        <div><span className="kicker">START WITH WHAT YOU NEED</span><h2>How can we help?</h2></div>
+        <button onClick={() => navigate('chat')}>Open chat <ArrowRight size={13} /></button>
+      </div>
+      <div className="quick-grid">
+        {[
+          ['Understand a document', 'Rental agreements, notices, contracts', FileText, 'documents'],
+          ['Ask a legal question', 'Get a straightforward explanation', CircleHelp, 'chat'],
+          ['Check my rights', 'Explore general rights and duties', ShieldCheck, 'tenant'],
+          ['Find a lawyer', 'Connect with a verified professional', UserRoundCheck, 'lawyers']
+        ].map(([title, sub, Icon, to]) => (
+          <button key={title} onClick={() => to === 'tenant' ? ask('What are my rights as a tenant?') : navigate(to)}>
+            <span><Icon size={18} /></span>
+            <div><b>{title}</b><small>{sub}</small></div>
+            <ArrowRight size={15} />
+          </button>
+        ))}
+      </div>
+      <div className="home-bottom">
+        <section className="recent-panel">
+          <span className="kicker">PICK UP WHERE YOU LEFT OFF</span>
+          <h2>Recent conversations</h2>
+          <button onClick={() => navigate('chat')}>
+            <Sparkles size={16} />
+            <span><b>What does an indemnity clause mean?</b><small>Today · General information</small></span>
+            <ArrowRight size={14} />
+          </button>
+          <button onClick={() => navigate('chat')}>
+            <FileCheck2 size={16} />
+            <span><b>Rental notice period explained</b><small>Yesterday · Tenant rights</small></span>
+            <ArrowRight size={14} />
+          </button>
+        </section>
+        <section className="mini-trust">
+          <ShieldCheck size={17} />
+          <span className="kicker">A NOTE ON TRUST</span>
+          <h3>AI helps you get oriented.<br />Your judgment comes first.</h3>
+          <p>Use LexAI to understand information and prepare questions. For advice on your circumstances, talk to a qualified lawyer.</p>
+          <button onClick={() => navigate('settings')}>How we handle privacy <ArrowRight size={13} /></button>
+        </section>
+      </div>
+      {saved.length > 0 && (
+        <button className="saved-nudge" onClick={() => navigate('saved')}>
+          <Bookmark size={14} />{saved.length} saved answers <ArrowRight size={13} />
+        </button>
+      )}
+    </div>
+  )
 }
 
 function Chat({ messages, ask, thinking, language, setLanguage, startVoice, toggleSaved, copy, regenerate, navigate, notify }) {
@@ -1093,4 +1210,268 @@ function ConsultationRequest({ lawyer, onBack, notify, navigate }) {
   )
 }
 
-function SettingsPage({language,setLanguage,dark,setDark,notify}) { return <div className="settings-view"><header className="page-head"><div><span className="kicker">YOUR WORKSPACE</span><h1>Settings</h1><p>Set up LexAI to feel right for you.</p></div></header><section className="settings-panel"><header><b>Preferences</b><small>Personalize your experience.</small></header><div><Languages size={17}/><span><b>Response language</b><small>Choose the language for LexAI answers</small></span><select value={language} onChange={e=>setLanguage(e.target.value)}>{['English','Hindi','Telugu','Tamil','Kannada','Marathi'].map(x=><option key={x}>{x}</option>)}</select></div><div><Moon size={17}/><span><b>Appearance</b><small>Adjust how LexAI looks on this device</small></span><button className={`switch ${dark?'on':''}`} onClick={()=>setDark(!dark)} role="switch" aria-checked={dark}><i/></button></div><div><ShieldCheck size={17}/><span><b>Privacy controls</b><small>Documents are processed securely for analysis</small></span><button className="link-btn" onClick={()=>notify('This demo stores document state only in the current browser session.')}>Review details <ArrowRight size={13}/></button></div></section><div className="settings-disclaimer"><Info size={17}/><div><b>How to use LexAI</b><p>LexAI provides legal information, not legal advice. AI complements professional lawyers rather than replacing them. Do not rely on a generated answer for urgent deadlines or high-stakes decisions.</p></div></div><div className="settings-profile"><i>AM</i><span><b>Alex Morgan</b><small>Personal workspace · Demo profile</small></span><button onClick={()=>notify('Profile settings are in demo mode.')}>Edit profile</button></div></div> }
+function SettingsPage({ language, setLanguage, dark, setDark, notify, currentUser, displayName, initials, onOpenAuth, onLogout }) {
+  const isDemo = currentUser?.email === 'alex.morgan@workspace.lexai'
+
+  return (
+    <div className="settings-view">
+      <header className="page-head">
+        <div>
+          <span className="kicker">YOUR WORKSPACE</span>
+          <h1>Settings</h1>
+          <p>Set up LexAI to feel right for you.</p>
+        </div>
+      </header>
+
+      <section className="settings-panel">
+        <header>
+          <b>Preferences</b>
+          <small>Personalize your experience.</small>
+        </header>
+        <div>
+          <Languages size={17} />
+          <span>
+            <b>Response language</b>
+            <small>Choose the language for LexAI answers</small>
+          </span>
+          <select value={language} onChange={e => setLanguage(e.target.value)}>
+            {['English', 'Hindi', 'Telugu', 'Tamil', 'Kannada', 'Marathi'].map(x => <option key={x}>{x}</option>)}
+          </select>
+        </div>
+        <div>
+          <Moon size={17} />
+          <span>
+            <b>Appearance</b>
+            <small>Adjust how LexAI looks on this device</small>
+          </span>
+          <button className={`switch ${dark ? 'on' : ''}`} onClick={() => setDark(!dark)} role="switch" aria-checked={dark}>
+            <i />
+          </button>
+        </div>
+        <div>
+          <ShieldCheck size={17} />
+          <span>
+            <b>Privacy & Security</b>
+            <small>Documents are encrypted in transit and analyzed in a sandboxed session.</small>
+          </span>
+          <button className="link-btn" onClick={() => notify('Documents and queries are verified against Indian statutory codes and stored securely.')}>
+            Review details <ArrowRight size={13} />
+          </button>
+        </div>
+      </section>
+
+      <div className="settings-disclaimer">
+        <Info size={17} />
+        <div>
+          <b>How to use LexAI</b>
+          <p>LexAI provides legal information, not legal advice. AI complements professional lawyers rather than replacing them. Do not rely on a generated answer for urgent court deadlines or high-stakes decisions.</p>
+        </div>
+      </div>
+
+      <div className="settings-profile">
+        <i>{initials || 'AM'}</i>
+        <span>
+          <b>{displayName || 'Alex Morgan'}</b>
+          <small>{currentUser?.email} · {currentUser?.role === 'LAWYER' ? 'Advocate Profile' : isDemo ? 'Demo Workspace' : 'Personal Workspace'}</small>
+        </span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button onClick={() => onOpenAuth?.('login')}>
+            {isDemo ? 'Sign In / Register' : 'Switch Account'}
+          </button>
+          {!isDemo && (
+            <button className="link-btn" onClick={onLogout} style={{ color: '#c53030' }}>
+              Sign Out
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AuthModal({ isOpen, onClose, initialMode = 'login', onAuthSuccess, notify }) {
+  const [mode, setMode] = useState(initialMode)
+  const [prevInitialMode, setPrevInitialMode] = useState(initialMode)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [role, setRole] = useState('USER')
+  const [city, setCity] = useState('Bengaluru')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  if (prevInitialMode !== initialMode) {
+    setPrevInitialMode(initialMode)
+    setMode(initialMode)
+    setError('')
+  }
+
+  if (!isOpen) return null
+
+  const handleFillDemo = () => {
+    setMode('login')
+    setEmail('alex.morgan@workspace.lexai')
+    setPassword('DemoUserPass123!')
+    setError('')
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    try {
+      if (mode === 'login') {
+        const data = await loginUser(email, password)
+        notify(`Welcome back, ${data.user?.profile?.full_name || data.user?.email}!`)
+        onAuthSuccess(data.user)
+        onClose()
+      } else {
+        const payload = {
+          email,
+          password,
+          role,
+          full_name: fullName,
+          city
+        }
+        const data = await registerUser(payload)
+        notify(`Account created successfully! Signed in as ${data.user?.profile?.full_name || data.user?.email}`)
+        onAuthSuccess(data.user)
+        onClose()
+      }
+    } catch (err) {
+      setError(err.message || 'Authentication failed. Please verify your credentials.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="auth-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="auth-card" onClick={e => e.stopPropagation()}>
+        <div className="auth-header">
+          <div>
+            <span className="kicker">LEXAI IDENTITY</span>
+            <h2>{mode === 'login' ? 'Sign in to LexAI' : 'Create an Account'}</h2>
+          </div>
+          <button className="close-btn" onClick={onClose} aria-label="Close authentication modal">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
+            onClick={() => { setMode('login'); setError('') }}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
+            onClick={() => { setMode('register'); setError('') }}
+          >
+            Create Account
+          </button>
+        </div>
+
+        {error && (
+          <div className="auth-error">
+            <Info size={14} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          {mode === 'register' && (
+            <>
+              <div className="auth-field">
+                <label>Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Adv. Rajesh Kumar"
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
+                />
+              </div>
+
+              <div className="auth-role-picker-container" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted, #78857e)' }}>Account Role</label>
+                <div className="auth-role-picker">
+                  <button
+                    type="button"
+                    className={`auth-role-btn ${role === 'USER' ? 'active' : ''}`}
+                    onClick={() => setRole('USER')}
+                  >
+                    <UserRoundCheck size={14} /> Individual / Client
+                  </button>
+                  <button
+                    type="button"
+                    className={`auth-role-btn ${role === 'LAWYER' ? 'active' : ''}`}
+                    onClick={() => setRole('LAWYER')}
+                  >
+                    <Scale size={14} /> Legal Advocate
+                  </button>
+                </div>
+              </div>
+
+              <div className="auth-field">
+                <label>City / Jurisdiction</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Bengaluru, Delhi, Mumbai"
+                  value={city}
+                  onChange={e => setCity(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          <div className="auth-field">
+            <label>Email Address</label>
+            <input
+              type="email"
+              required
+              placeholder="name@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div className="auth-field">
+            <label>Password</label>
+            <input
+              type="password"
+              required
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+          </div>
+
+          <button type="submit" className="auth-submit" disabled={loading}>
+            {loading ? (
+              'Processing...'
+            ) : mode === 'login' ? (
+              <>Sign In <ArrowRight size={14} /></>
+            ) : (
+              <>Create Account <ArrowRight size={14} /></>
+            )}
+          </button>
+
+          {mode === 'login' && (
+            <button
+              type="button"
+              className="auth-demo-btn"
+              onClick={handleFillDemo}
+            >
+              <Sparkles size={13} /> Fill Demo Credentials (Alex Morgan)
+            </button>
+          )}
+        </form>
+      </div>
+    </div>
+  )
+}

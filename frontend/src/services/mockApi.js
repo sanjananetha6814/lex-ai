@@ -37,6 +37,77 @@ export async function getAuthToken() {
   return null
 }
 
+export async function loginUser(email, password) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  })
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.message || 'Incorrect email or password.')
+  }
+
+  const data = await res.json()
+  cachedToken = data.access_token
+  try {
+    window.sessionStorage?.setItem('lexai_token', cachedToken)
+    window.sessionStorage?.setItem('lexai_user', JSON.stringify(data.user))
+  } catch {}
+  return data
+}
+
+export async function registerUser(userData) {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userData)
+  })
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.message || 'Registration failed. Please check your details.')
+  }
+
+  const data = await res.json()
+  cachedToken = data.access_token
+  try {
+    window.sessionStorage?.setItem('lexai_token', cachedToken)
+    window.sessionStorage?.setItem('lexai_user', JSON.stringify(data.user))
+  } catch {}
+  return data
+}
+
+export async function fetchCurrentUser() {
+  const token = await getAuthToken()
+  if (!token) return null
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (res.ok) {
+      const user = await res.json()
+      try {
+        window.sessionStorage?.setItem('lexai_user', JSON.stringify(user))
+      } catch {}
+      return user
+    }
+  } catch (err) {
+    console.warn('⚠️ [Auth] Failed to fetch current user profile:', err)
+  }
+  return null
+}
+
+export function logoutUser() {
+  cachedToken = null
+  try {
+    window.sessionStorage?.removeItem('lexai_token')
+    window.sessionStorage?.removeItem('lexai_user')
+  } catch {}
+}
+
 const tenantResponses = {
   English: ['As a tenant, you generally have the right to know the terms of your rental agreement. Local laws may provide additional protections.', 'Review rent, deposit, repairs and notice terms. Tenant protections vary by location.', ['When and how rent may increase', 'Deposit return conditions', 'Notice periods and reasons for ending the tenancy'], 'Speak with a local lawyer if you receive an eviction notice or have a dispute about your rights.', 'This is general legal information, not legal advice. Exact rights depend on your agreement and local law.'],
   Telugu: ['అద్దెదారుగా, అద్దె ఒప్పందంలోని నిబంధనలను తెలుసుకునే హక్కు మీకు ఉంది. స్థానిక చట్టాలు అదనపు హక్కులు కల్పించవచ్చు.', 'మీ ఒప్పందంలోని అద్దె, డిపాజిట్, మరమ్మతులు మరియు నోటీసు నిబంధనలను పరిశీలించండి.', ['అద్దె పెంపు ఎప్పుడు, ఎలా చేయవచ్చో చూడండి', 'డిపాజిట్ తిరిగి ఇచ్చే షరతులను తనిఖీ చేయండి', 'తొలగింపు మరియు నోటీసు నిబంధనలను చదవండి'], 'తొలగింపు నోటీసు అందితే లేదా హక్కులపై వివాదం ఉంటే స్థానిక న్యాయవాదిని సంప్రదించండి.', 'ఇది సాధారణ న్యాయ సమాచారం మాత్రమే. ఖచ్చితమైన హక్కులు మీ ఒప్పందం మరియు స్థానిక చట్టాలపై ఆధారపడి ఉంటాయి.'],
