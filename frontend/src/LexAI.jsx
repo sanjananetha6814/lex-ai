@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, AudioLines, Award, Bookmark, Briefcase, Building2, Calendar, Check, ChevronDown, CircleHelp, Clipboard, Clock, FileCheck2, FileSearch, FileText, Filter, Globe2, Heart, History, Info, Languages, LockKeyhole, MapPin, Menu, MessageCircle, MessageSquare, Mic, Moon, MoreHorizontal, Phone, Plus, Scale, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Star, Sun, ThumbsDown, ThumbsUp, Upload, UserRoundCheck, Video, X } from 'lucide-react'
-import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser, fetchConversations, fetchConversation, fetchLawyerConsultations, updateConsultationStatus } from './services/mockApi.js'
+import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser, fetchConversations, fetchConversation, fetchLawyerConsultations, updateConsultationStatus, bookConsultation, fetchUserConsultations } from './services/mockApi.js'
 
 
 const initialMessages = [
@@ -40,7 +40,14 @@ export default function LexAI() {
   })
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState('login')
+  const [userConsultations, setUserConsultations] = useState([])
   const notify = (message) => setToast(message)
+
+  const loadUserConsultations = () => {
+    fetchUserConsultations().then(data => {
+      if (Array.isArray(data)) setUserConsultations(data)
+    })
+  }
 
   useEffect(() => {
     fetchCurrentUser().then(user => {
@@ -52,6 +59,7 @@ export default function LexAI() {
     fetchConversations().then(data => {
       if (Array.isArray(data)) setConversations(data)
     })
+    loadUserConsultations()
   }, [currentUser])
 
   useEffect(() => {
@@ -245,13 +253,13 @@ export default function LexAI() {
         </div>
       </header>
       <div className="content" key={view}>
-        {view === 'home' && <Home ask={ask} navigate={navigate} voice={voice} startVoice={startVoice} saved={saved} displayName={displayName} onOpenAuth={() => { setAuthMode('login'); setAuthModalOpen(true); }} conversations={conversations} onSelectConversation={selectConversation} />}
+        {view === 'home' && <Home ask={ask} navigate={navigate} voice={voice} startVoice={startVoice} saved={saved} displayName={displayName} onOpenAuth={() => { setAuthMode('login'); setAuthModalOpen(true); }} conversations={conversations} onSelectConversation={selectConversation} userConsultations={userConsultations} />}
         {view === 'chat' && <Chat messages={messages} ask={ask} thinking={thinking} language={language} setLanguage={setLanguage} voice={voice} startVoice={startVoice} toggleSaved={toggleSaved} copy={copy} regenerate={regenerate} navigate={navigate} notify={notify} conversations={conversations} activeConversationId={activeConversationId} onSelectConversation={selectConversation} onNewChat={startNewChat} />}
         {view === 'documents' && <Documents file={file} fileState={fileState} analysisData={analysisData} upload={upload} sample={sample} ask={ask} onNavigate={navigate} />}
         {view === 'saved' && <Saved answers={saved} toggleSaved={toggleSaved} copy={copy} navigate={navigate} />}
         {view === 'lawyers' && <Lawyers lawyers={lawyersList} notify={notify} onViewProfile={(l) => navigate('lawyer-profile', l)} onRequestConsultation={(l) => navigate('consultation', l)} />}
         {view === 'lawyer-profile' && <LawyerProfile lawyer={selectedLawyer} onBack={() => navigate('lawyers')} onRequestConsultation={(l) => navigate('consultation', l)} />}
-        {view === 'consultation' && <ConsultationRequest lawyer={selectedLawyer} onBack={() => navigate('lawyer-profile', selectedLawyer)} notify={notify} navigate={navigate} />}
+        {view === 'consultation' && <ConsultationRequest lawyer={selectedLawyer} onBack={() => navigate('lawyer-profile', selectedLawyer)} notify={notify} navigate={navigate} onConsultationBooked={loadUserConsultations} />}
         {view === 'lawyer-dashboard' && <LawyerDashboard currentUser={currentUser} notify={notify} />}
         {view === 'settings' && <SettingsPage language={language} setLanguage={setLanguage} dark={dark} setDark={setDark} notify={notify} currentUser={currentUser} displayName={displayName} initials={initials} onOpenAuth={(mode = 'login') => { setAuthMode(mode); setAuthModalOpen(true); }} onLogout={handleLogout} />}
       </div>
@@ -288,7 +296,7 @@ function Landing({ enter, demo }) {
 }
 
 function SidebarIcon() { return <Scale size={17} /> }
-function Home({ ask, navigate, voice, startVoice, saved, displayName, conversations = [], onSelectConversation }) {
+function Home({ ask, navigate, voice, startVoice, saved, displayName, conversations = [], onSelectConversation, userConsultations = [] }) {
   const [query, setQuery] = useState('')
   const send = (e) => { e.preventDefault(); if (query.trim()) { ask(query); setQuery('') } }
   const firstName = displayName ? displayName.split(' ')[0] : 'there'
@@ -335,6 +343,45 @@ function Home({ ask, navigate, voice, startVoice, saved, displayName, conversati
           </button>
         ))}
       </div>
+      {userConsultations && userConsultations.length > 0 && (
+        <section className="client-consultations-panel">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <div>
+              <span className="kicker">LEGAL SESSIONS & BOOKINGS</span>
+              <h2 style={{ margin: 0, fontSize: '1.25rem' }}>My Consultations ({userConsultations.length})</h2>
+            </div>
+            <button className="link-btn" onClick={() => navigate('lawyers')} style={{ fontSize: '11px', color: '#3f6551', fontWeight: 600 }}>
+              Find another advocate <ArrowRight size={12} />
+            </button>
+          </div>
+          <div className="client-consultations-list">
+            {userConsultations.map(c => {
+              const statusColor = c.status === 'CONFIRMED' ? '#1e7e48' : c.status === 'COMPLETED' ? '#2b5876' : c.status === 'CANCELLED' ? '#c0392b' : '#b7791f'
+              const statusBg = c.status === 'CONFIRMED' ? 'rgba(30,126,72,0.1)' : c.status === 'COMPLETED' ? 'rgba(43,88,118,0.1)' : c.status === 'CANCELLED' ? 'rgba(192,57,43,0.1)' : 'rgba(217,119,6,0.12)'
+              const statusLabel = c.status === 'CONFIRMED' ? 'Confirmed & Scheduled' : c.status === 'COMPLETED' ? 'Completed' : c.status === 'CANCELLED' ? 'Declined' : 'Pending Review'
+
+              return (
+                <div key={c.id} className="client-consultation-card">
+                  <div className="card-top">
+                    <div>
+                      <strong>Adv. {c.lawyer_name || 'Counsel'}</strong>
+                      <span className="card-sub">{c.lawyer_specialty || 'Advocate'} · #{c.reference_no}</span>
+                    </div>
+                    <span className="status-badge-client" style={{ color: statusColor, background: statusBg }}>
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <div className="card-meta">
+                    <span><Calendar size={13} /> {c.scheduled_date} at {c.scheduled_slot}</span>
+                    <span><Video size={13} /> {c.format === 'video' ? 'Video Conference' : c.format === 'phone' ? 'Phone' : 'Chambers Visit'}</span>
+                    <span><Scale size={13} /> {c.fee || '₹1,500'}</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
       <div className="home-bottom">
         <section className="recent-panel">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -1166,7 +1213,7 @@ function LawyerProfile({ lawyer, onBack, onRequestConsultation }) {
   )
 }
 
-function ConsultationRequest({ lawyer, onBack, notify, navigate }) {
+function ConsultationRequest({ lawyer, onBack, notify, navigate, onConsultationBooked }) {
   const currentLawyer = lawyer || directory[0]
   const [todayStr] = useState(() => new Date().toISOString().split('T')[0])
 
@@ -1201,32 +1248,23 @@ function ConsultationRequest({ lawyer, onBack, notify, navigate }) {
 
     setSubmitting(true)
     try {
-      const res = await fetch(`${API_BASE}/consultations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lawyer_id: lawyerIdNum,
-          client_name: fullName.trim(),
-          client_email: email.trim(),
-          client_phone: phone.trim(),
-          client_language: language,
-          format: mode,
-          scheduled_date: date,
-          scheduled_slot: slot,
-          issue_description: issue.trim(),
-          is_urgent: isUrgent,
-        })
+      const data = await bookConsultation({
+        lawyer_id: lawyerIdNum,
+        client_name: fullName.trim(),
+        client_email: email.trim(),
+        client_phone: phone.trim(),
+        client_language: language,
+        format: mode,
+        scheduled_date: date,
+        scheduled_slot: slot,
+        issue_description: issue.trim(),
+        is_urgent: isUrgent,
       })
 
-      if (res.ok) {
-        const data = await res.json()
-        setRefId(data.reference_no)
-        setIsSubmitted(true)
-        notify(`Consultation request confirmed with ${currentLawyer.name}!`)
-      } else {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.message || 'Failed to submit')
-      }
+      setRefId(data.reference_no)
+      setIsSubmitted(true)
+      if (onConsultationBooked) onConsultationBooked()
+      notify(`Consultation request confirmed with ${currentLawyer.name}!`)
     } catch {
       const generatedRef = 'LEX-' + Math.floor(100000 + Math.random() * 900000)
       setRefId(generatedRef)

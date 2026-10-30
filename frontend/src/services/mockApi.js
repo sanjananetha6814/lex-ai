@@ -322,6 +322,28 @@ export async function fetchLawyerConsultations(statusFilter = null) {
   return []
 }
 
+export async function bookConsultation(bookingData) {
+  const token = await getAuthToken()
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_BASE}/consultations`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(bookingData)
+  })
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.message || 'Failed to submit consultation booking.')
+  }
+  return await res.json()
+}
+
+export async function fetchUserConsultations() {
+  return await fetchLawyerConsultations()
+}
+
 export async function updateConsultationStatus(consultationId, newStatus) {
   const token = await getAuthToken()
   const headers = { 'Content-Type': 'application/json' }
