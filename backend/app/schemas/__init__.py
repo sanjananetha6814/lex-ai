@@ -16,6 +16,11 @@ from app.schemas.chat import (
     ChatQuestionRequest,
     ChatAnswerResponse,
 )
+from app.schemas.notification import (
+    NotificationResponse,
+    NotificationListResponse,
+    MarkAllReadResponse,
+)
 
 __all__ = [
     "UserRegister",
@@ -36,4 +41,8 @@ __all__ = [
     "MessageResponse",
     "ChatQuestionRequest",
     "ChatAnswerResponse",
+    "NotificationResponse",
+    "NotificationListResponse",
+    "MarkAllReadResponse",
 ]
+

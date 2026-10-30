@@ -86,16 +86,33 @@ def create_consultation(
     db.add(consultation)
     db.flush()
 
-    # If logged in user, create notification
+    # 1. Notify Client if logged in
     if current_user:
         notification = Notification(
             user_id=current_user.id,
             title="Consultation Request Submitted",
-            message=f"Your consultation request #{ref_no} with {lawyer.name} has been received.",
+            message=f"Your consultation request #{ref_no} with Adv. {lawyer.name} has been received.",
             type="CONSULTATION",
             is_read=False
         )
         db.add(notification)
+
+    # 2. Notify Lawyer if lawyer has an associated user account
+    lawyer_user_id = lawyer.user_id
+    if not lawyer_user_id:
+        matched_user = db.query(User).filter(User.email == lawyer.email).first()
+        if matched_user:
+            lawyer_user_id = matched_user.id
+
+    if lawyer_user_id:
+        lawyer_notification = Notification(
+            user_id=lawyer_user_id,
+            title="New Consultation Request",
+            message=f"{booking.client_name} requested a consultation (#{ref_no}) for {booking.scheduled_date} at {booking.scheduled_slot}.",
+            type="CONSULTATION",
+            is_read=False
+        )
+        db.add(lawyer_notification)
 
     db.commit()
     db.refresh(consultation)
@@ -216,11 +233,25 @@ def update_consultation_status(
 
     # Notify user if consultation has a linked user account
     if consultation.user_id:
-        status_label = status_in.status.value.title()
+        lawyer_display = f"Adv. {consultation.lawyer.name}" if consultation.lawyer else "Your advocate"
+        if status_in.status == ConsultationStatus.CONFIRMED:
+            title = "Consultation Confirmed"
+            message = f"{lawyer_display} confirmed your consultation #{consultation.reference_no} for {consultation.scheduled_date} at {consultation.scheduled_slot}."
+        elif status_in.status == ConsultationStatus.CANCELLED:
+            title = "Consultation Declined"
+            message = f"Your consultation request #{consultation.reference_no} with {lawyer_display} was declined."
+        elif status_in.status == ConsultationStatus.COMPLETED:
+            title = "Consultation Completed"
+            message = f"Your consultation #{consultation.reference_no} with {lawyer_display} has been marked as completed."
+        else:
+            status_label = status_in.status.value.title()
+            title = f"Consultation Request {status_label}"
+            message = f"Your consultation #{consultation.reference_no} status has been updated to {status_label}."
+
         notification = Notification(
             user_id=consultation.user_id,
-            title=f"Consultation Request {status_label}",
-            message=f"Your consultation #{consultation.reference_no} status has been updated to {status_label}.",
+            title=title,
+            message=message,
             type="CONSULTATION",
             is_read=False
         )

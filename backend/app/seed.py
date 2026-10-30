@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine, Base
 from app.models.user import User, UserProfile, UserRole
 from app.models.lawyer import Lawyer, LawyerProfile
-from app.models.notification import Review
+from app.models.notification import Review, Notification
 from app.models.consultation import Consultation, ConsultationStatus
 from app.auth import get_password_hash
 
@@ -373,6 +373,39 @@ def seed_database(db: Session):
         )
         db.add(c1)
         db.add(c2)
+
+    # Seed initial notifications if none exist
+    if demo_user and db.query(Notification).filter(Notification.user_id == demo_user.id).count() == 0:
+        db.add(Notification(
+            user_id=demo_user.id,
+            title="Welcome to LexAI",
+            message="Your confidential legal workspace is ready. You can ask legal questions, analyze agreements, or book consultations with verified advocates.",
+            type="INFO",
+            is_read=True
+        ))
+        db.add(Notification(
+            user_id=demo_user.id,
+            title="Consultation Confirmed",
+            message="Adv. Ananya Rao confirmed your consultation #LEX-391482 for 2026-11-04 at 11:30 AM.",
+            type="CONSULTATION",
+            is_read=False
+        ))
+
+    if demo_lawyer_user and db.query(Notification).filter(Notification.user_id == demo_lawyer_user.id).count() == 0:
+        db.add(Notification(
+            user_id=demo_lawyer_user.id,
+            title="New Consultation Request",
+            message="Pooja Hegde requested a consultation (#LEX-782194) for 2026-11-02 at 04:00 PM.",
+            type="CONSULTATION",
+            is_read=False
+        ))
+        db.add(Notification(
+            user_id=demo_lawyer_user.id,
+            title="Welcome to Advocate Portal",
+            message="Your verified advocate profile is active on LexAI. Inbound consultations will appear in your queue.",
+            type="INFO",
+            is_read=True
+        ))
 
     db.commit()
 

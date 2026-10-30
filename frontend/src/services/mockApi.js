@@ -362,3 +362,60 @@ export async function updateConsultationStatus(consultationId, newStatus) {
 
   return await res.json()
 }
+
+export async function fetchNotifications(unreadOnly = false) {
+  try {
+    const token = await getAuthToken()
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    let url = `${API_BASE}/notifications`
+    if (unreadOnly) url += '?unread_only=true'
+
+    const res = await fetch(url, { headers })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn('⚠️ [API] Failed to fetch notifications:', err)
+  }
+  return { items: [], unread_count: 0 }
+}
+
+export async function markNotificationRead(notificationId) {
+  try {
+    const token = await getAuthToken()
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    const res = await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
+      method: 'PATCH',
+      headers
+    })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn('⚠️ [API] Failed to mark notification read:', err)
+  }
+  return null
+}
+
+export async function markAllNotificationsRead() {
+  try {
+    const token = await getAuthToken()
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    const res = await fetch(`${API_BASE}/notifications/mark-all-read`, {
+      method: 'POST',
+      headers
+    })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn('⚠️ [API] Failed to mark all notifications read:', err)
+  }
+  return { success: false, marked_count: 0 }
+}

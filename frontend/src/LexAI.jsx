@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, AudioLines, Award, Bookmark, Briefcase, Building2, Calendar, Check, ChevronDown, CircleHelp, Clipboard, Clock, FileCheck2, FileSearch, FileText, Filter, Globe2, Heart, History, Info, Languages, LockKeyhole, MapPin, Menu, MessageCircle, MessageSquare, Mic, Moon, MoreHorizontal, Phone, Plus, Scale, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Star, Sun, ThumbsDown, ThumbsUp, Upload, UserRoundCheck, Video, X } from 'lucide-react'
-import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser, fetchConversations, fetchConversation, fetchLawyerConsultations, updateConsultationStatus, bookConsultation, fetchUserConsultations } from './services/mockApi.js'
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, AudioLines, Award, Bell, Bookmark, Briefcase, Building2, Calendar, Check, ChevronDown, CircleHelp, Clipboard, Clock, FileCheck2, FileSearch, FileText, Filter, Globe2, Heart, History, Info, Languages, LockKeyhole, MapPin, Menu, MessageCircle, MessageSquare, Mic, Moon, MoreHorizontal, Phone, Plus, Scale, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Star, Sun, ThumbsDown, ThumbsUp, Upload, UserRoundCheck, Video, X } from 'lucide-react'
+import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser, fetchConversations, fetchConversation, fetchLawyerConsultations, updateConsultationStatus, bookConsultation, fetchUserConsultations, fetchNotifications, markNotificationRead, markAllNotificationsRead } from './services/mockApi.js'
 
 
 const initialMessages = [
@@ -41,12 +41,39 @@ export default function LexAI() {
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState('login')
   const [userConsultations, setUserConsultations] = useState([])
+  const [notifications, setNotifications] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const notifRef = useRef(null)
   const notify = (message) => setToast(message)
+
+  const loadNotifications = () => {
+    fetchNotifications().then(res => {
+      if (res && Array.isArray(res.items)) {
+        setNotifications(res.items)
+        setUnreadCount(res.unread_count || 0)
+      }
+    })
+  }
 
   const loadUserConsultations = () => {
     fetchUserConsultations().then(data => {
       if (Array.isArray(data)) setUserConsultations(data)
     })
+    loadNotifications()
+  }
+
+  const handleMarkRead = async (notifId) => {
+    await markNotificationRead(notifId)
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n))
+    setUnreadCount(prev => Math.max(0, prev - 1))
+  }
+
+  const handleMarkAllRead = async () => {
+    await markAllNotificationsRead()
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    setUnreadCount(0)
+    notify('All notifications marked as read.')
   }
 
   useEffect(() => {
@@ -60,7 +87,22 @@ export default function LexAI() {
       if (Array.isArray(data)) setConversations(data)
     })
     loadUserConsultations()
+    loadNotifications()
   }, [currentUser])
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setNotificationsOpen(false)
+      }
+    }
+    if (notificationsOpen) {
+      document.addEventListener('mousedown', handleOutsideClick)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+    }
+  }, [notificationsOpen])
 
   useEffect(() => {
     fetch(`${API_BASE}/lawyers`)
@@ -247,6 +289,28 @@ export default function LexAI() {
           </div>
           <div className="top-actions">
             <button className="privacy-chip" onClick={() => navigate('settings')}><Shield size={14} /> Documents are private</button>
+            <div className="notif-wrapper" ref={notifRef}>
+              <button
+                className={`notif-bell-btn ${unreadCount > 0 ? 'has-unread' : ''}`}
+                aria-label={`Notifications (${unreadCount} unread)`}
+                title={`Notifications (${unreadCount} unread)`}
+                onClick={() => setNotificationsOpen(!notificationsOpen)}
+              >
+                <Bell size={16} />
+                {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
+              </button>
+              {notificationsOpen && (
+                <NotificationsDropdown
+                  notifications={notifications}
+                  unreadCount={unreadCount}
+                  onMarkRead={handleMarkRead}
+                  onMarkAllRead={handleMarkAllRead}
+                  onClose={() => setNotificationsOpen(false)}
+                  navigate={navigate}
+                  userRole={currentUser?.role}
+                />
+              )}
+            </div>
             <button className="icon-button theme" aria-label="Toggle color mode" onClick={() => setDark(!dark)}>{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
             <button className="avatar-small" onClick={() => { setAuthMode('login'); setAuthModalOpen(true); }} aria-label="Account Settings & Authentication" title={`${displayName} (${currentUser?.email}) · Click to switch account`}>{initials}</button>
           </div>
@@ -260,7 +324,7 @@ export default function LexAI() {
         {view === 'lawyers' && <Lawyers lawyers={lawyersList} notify={notify} onViewProfile={(l) => navigate('lawyer-profile', l)} onRequestConsultation={(l) => navigate('consultation', l)} />}
         {view === 'lawyer-profile' && <LawyerProfile lawyer={selectedLawyer} onBack={() => navigate('lawyers')} onRequestConsultation={(l) => navigate('consultation', l)} />}
         {view === 'consultation' && <ConsultationRequest lawyer={selectedLawyer} onBack={() => navigate('lawyer-profile', selectedLawyer)} notify={notify} navigate={navigate} onConsultationBooked={loadUserConsultations} />}
-        {view === 'lawyer-dashboard' && <LawyerDashboard currentUser={currentUser} notify={notify} />}
+        {view === 'lawyer-dashboard' && <LawyerDashboard currentUser={currentUser} notify={notify} onRefreshNotifications={loadNotifications} />}
         {view === 'settings' && <SettingsPage language={language} setLanguage={setLanguage} dark={dark} setDark={setDark} notify={notify} currentUser={currentUser} displayName={displayName} initials={initials} onOpenAuth={(mode = 'login') => { setAuthMode(mode); setAuthModalOpen(true); }} onLogout={handleLogout} />}
       </div>
       <footer className="app-disclaimer">LexAI provides legal information, not legal advice. AI complements professional lawyers rather than replacing them.</footer>
@@ -296,6 +360,82 @@ function Landing({ enter, demo }) {
 }
 
 function SidebarIcon() { return <Scale size={17} /> }
+
+function NotificationsDropdown({ notifications = [], unreadCount = 0, onMarkRead, onMarkAllRead, onClose, navigate, userRole }) {
+  const getIcon = (title) => {
+    if (title.includes('Confirmed')) return <Check size={14} className="notif-icon confirmed" />
+    if (title.includes('Declined') || title.includes('Cancelled')) return <X size={14} className="notif-icon declined" />
+    if (title.includes('Completed')) return <Award size={14} className="notif-icon completed" />
+    if (title.includes('Request')) return <Clock size={14} className="notif-icon request" />
+    return <Sparkles size={14} className="notif-icon info" />
+  }
+
+  const formatNotificationTime = (dateStr) => {
+    if (!dateStr) return 'Recent'
+    try {
+      return new Date(dateStr).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+    } catch {
+      return 'Recent'
+    }
+  }
+
+  return (
+    <div className="notifications-dropdown-menu">
+      <div className="notif-header">
+        <div className="notif-title-row">
+          <h3>Notifications</h3>
+          {unreadCount > 0 && <span className="notif-unread-count">{unreadCount} new</span>}
+        </div>
+        {unreadCount > 0 && (
+          <button className="mark-all-read-btn" onClick={onMarkAllRead}>
+            Mark all read
+          </button>
+        )}
+      </div>
+
+      <div className="notif-items-list">
+        {notifications.length === 0 ? (
+          <div className="notif-empty-state">
+            <Bell size={24} className="empty-bell" />
+            <p>You&apos;re all caught up!</p>
+            <small>New consultation updates and booking requests will appear here.</small>
+          </div>
+        ) : (
+          notifications.map(n => (
+            <div
+              key={n.id}
+              className={`notif-card ${!n.is_read ? 'unread' : 'read'}`}
+              onClick={() => {
+                if (!n.is_read) onMarkRead(n.id)
+                if (n.title.includes('Consultation') || n.title.includes('Request')) {
+                  onClose()
+                  if (userRole === 'LAWYER') {
+                    navigate('lawyer-dashboard')
+                  } else {
+                    navigate('home')
+                  }
+                }
+              }}
+            >
+              <div className="notif-card-icon">
+                {getIcon(n.title)}
+              </div>
+              <div className="notif-card-content">
+                <div className="notif-card-title-row">
+                  <strong>{n.title}</strong>
+                  <span className="notif-time">{formatNotificationTime(n.created_at)}</span>
+                </div>
+                <p className="notif-card-message">{n.message}</p>
+              </div>
+              {!n.is_read && <span className="unread-dot" title="Unread notification" />}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Home({ ask, navigate, voice, startVoice, saved, displayName, conversations = [], onSelectConversation, userConsultations = [] }) {
   const [query, setQuery] = useState('')
   const send = (e) => { e.preventDefault(); if (query.trim()) { ask(query); setQuery('') } }
@@ -1520,7 +1660,7 @@ function ConsultationRequest({ lawyer, onBack, notify, navigate, onConsultationB
   )
 }
 
-function LawyerDashboard({ currentUser, notify }) {
+function LawyerDashboard({ currentUser, notify, onRefreshNotifications }) {
   const [consultations, setConsultations] = useState([])
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [loading, setLoading] = useState(true)
@@ -1544,6 +1684,7 @@ function LawyerDashboard({ currentUser, notify }) {
       const updated = await updateConsultationStatus(consultationId, newStatus)
       notify(`Consultation #${updated.reference_no} updated to ${newStatus}.`)
       setConsultations(prev => prev.map(c => c.id === consultationId ? updated : c))
+      if (onRefreshNotifications) onRefreshNotifications()
     } catch (err) {
       notify(err.message || 'Could not update status.')
     } finally {
