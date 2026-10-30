@@ -1,5 +1,5 @@
-
 import { useState } from "react";
+import type { ElementType } from "react";
 import {
   Scale,
   MessageSquare,
@@ -12,10 +12,16 @@ import {
 } from "lucide-react";
 import "./App.css";
 
-function App() {
-  const [message, setMessage] = useState("");
+interface Feature {
+  icon: ElementType;
+  title: string;
+  text: string;
+}
 
-  const features = [
+function App() {
+  const [message, setMessage] = useState<string>("");
+
+  const features: Feature[] = [
     {
       icon: MessageSquare,
       title: "AI Legal Chatbot",
@@ -224,4 +230,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;
