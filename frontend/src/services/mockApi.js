@@ -108,6 +108,55 @@ export function logoutUser() {
   } catch {}
 }
 
+export async function fetchConversations() {
+  try {
+    const token = await getAuthToken()
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${API_BASE}/conversations`, { headers })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn('⚠️ [API] Failed to fetch conversations:', err)
+  }
+  return []
+}
+
+export async function fetchConversation(conversationId) {
+  try {
+    const token = await getAuthToken()
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${API_BASE}/conversations/${conversationId}`, { headers })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn(`⚠️ [API] Failed to fetch conversation ${conversationId}:`, err)
+  }
+  return null
+}
+
+export async function createConversation(title, language = 'English') {
+  try {
+    const token = await getAuthToken()
+    const headers = { 'Content-Type': 'application/json' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${API_BASE}/conversations`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ title, language })
+    })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn('⚠️ [API] Failed to create conversation:', err)
+  }
+  return null
+}
+
 const tenantResponses = {
   English: ['As a tenant, you generally have the right to know the terms of your rental agreement. Local laws may provide additional protections.', 'Review rent, deposit, repairs and notice terms. Tenant protections vary by location.', ['When and how rent may increase', 'Deposit return conditions', 'Notice periods and reasons for ending the tenancy'], 'Speak with a local lawyer if you receive an eviction notice or have a dispute about your rights.', 'This is general legal information, not legal advice. Exact rights depend on your agreement and local law.'],
   Telugu: ['అద్దెదారుగా, అద్దె ఒప్పందంలోని నిబంధనలను తెలుసుకునే హక్కు మీకు ఉంది. స్థానిక చట్టాలు అదనపు హక్కులు కల్పించవచ్చు.', 'మీ ఒప్పందంలోని అద్దె, డిపాజిట్, మరమ్మతులు మరియు నోటీసు నిబంధనలను పరిశీలించండి.', ['అద్దె పెంపు ఎప్పుడు, ఎలా చేయవచ్చో చూడండి', 'డిపాజిట్ తిరిగి ఇచ్చే షరతులను తనిఖీ చేయండి', 'తొలగింపు మరియు నోటీసు నిబంధనలను చదవండి'], 'తొలగింపు నోటీసు అందితే లేదా హక్కులపై వివాదం ఉంటే స్థానిక న్యాయవాదిని సంప్రదించండి.', 'ఇది సాధారణ న్యాయ సమాచారం మాత్రమే. ఖచ్చితమైన హక్కులు మీ ఒప్పందం మరియు స్థానిక చట్టాలపై ఆధారపడి ఉంటాయి.'],
@@ -117,23 +166,27 @@ const tenantResponses = {
   Marathi: ['भाडेकरू म्हणून तुम्हाला भाडेकरारातील अटी जाणून घेण्याचा अधिकार आहे. स्थानिक कायदे अतिरिक्त संरक्षण देऊ शकतात.', 'भाडे, ठेव, दुरुस्ती आणि नोटीसच्या अटी तपासा.', ['भाडे कधी वाढवता येते', 'ठेव परत करण्याच्या अटी', 'बेदखली आणि नोटीसचा कालावधी'], 'बेदखलीची नोटीस मिळाल्यास स्थानिक वकिलाशी बोला.', 'ही सामान्य कायदेशीर माहिती आहे, कायदेशीर सल्ला नाही. नेमके हक्क करार आणि स्थानिक कायद्यांवर अवलंबून असतात.'],
 }
 
-export async function askLegalQuestion(question, language = 'English') {
+export async function askLegalQuestion(question, language = 'English', conversationId = null) {
   let backendResponse = null
   try {
     const token = await getAuthToken()
     const headers = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
 
+    const payload = { message: question, language }
+    if (conversationId) payload.conversation_id = conversationId
+
     const res = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ message: question, language })
+      body: JSON.stringify(payload)
     })
     if (res.ok) {
       backendResponse = await res.json()
       console.log('✅ [FastAPI Backend] Successfully reached backend /api/chat:', backendResponse)
       return {
         id: backendResponse.message_id || Date.now(),
+        conversation_id: backendResponse.conversation_id,
         role: 'assistant',
         title: backendResponse.title || 'Simple Explanation',
         text: backendResponse.explanation,

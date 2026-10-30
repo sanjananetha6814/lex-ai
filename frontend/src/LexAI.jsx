@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, AudioLines, Award, Bookmark, Briefcase, Building2, Calendar, Check, ChevronDown, CircleHelp, Clipboard, Clock, FileCheck2, FileSearch, FileText, Filter, Globe2, Heart, Info, Languages, LockKeyhole, MapPin, Menu, MessageCircle, Mic, Moon, MoreHorizontal, Phone, Plus, Scale, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Star, Sun, ThumbsDown, ThumbsUp, Upload, UserRoundCheck, Video, X } from 'lucide-react'
-import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser } from './services/mockApi.js'
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, AudioLines, Award, Bookmark, Briefcase, Building2, Calendar, Check, ChevronDown, CircleHelp, Clipboard, Clock, FileCheck2, FileSearch, FileText, Filter, Globe2, Heart, History, Info, Languages, LockKeyhole, MapPin, Menu, MessageCircle, MessageSquare, Mic, Moon, MoreHorizontal, Phone, Plus, Scale, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Star, Sun, ThumbsDown, ThumbsUp, Upload, UserRoundCheck, Video, X } from 'lucide-react'
+import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser, fetchConversations, fetchConversation } from './services/mockApi.js'
 
 const initialMessages = [
   { id: 1, role: 'user', text: 'What does an indemnity clause mean?' },
@@ -14,6 +14,8 @@ export default function LexAI() {
   const [dark, setDark] = useState(false)
   const [language, setLanguage] = useState('English')
   const [messages, setMessages] = useState(initialMessages)
+  const [conversations, setConversations] = useState([])
+  const [activeConversationId, setActiveConversationId] = useState(null)
   const [saved, setSaved] = useState([])
   const [toast, setToast] = useState('')
   const [thinking, setThinking] = useState(false)
@@ -46,6 +48,12 @@ export default function LexAI() {
   }, [])
 
   useEffect(() => {
+    fetchConversations().then(data => {
+      if (Array.isArray(data)) setConversations(data)
+    })
+  }, [currentUser])
+
+  useEffect(() => {
     fetch(`${API_BASE}/lawyers`)
       .then(res => res.ok ? res.json() : null)
       .then(data => {
@@ -63,10 +71,61 @@ export default function LexAI() {
 
   useEffect(() => { if (!toast) return undefined; const timer = setTimeout(() => setToast(''), 2800); return () => clearTimeout(timer) }, [toast])
   const navigate = (next, lawyer = null) => { enter(true); if (lawyer) setSelectedLawyer(lawyer); setView(next); setMobileOpen(false) }
+
+  const selectConversation = async (convId) => {
+    setActiveConversationId(convId)
+    enter(true)
+    setView('chat')
+    const fullConv = await fetchConversation(convId)
+    if (fullConv && Array.isArray(fullConv.messages)) {
+      const formatted = fullConv.messages.map(m => {
+        if (m.role === 'user') {
+          return { id: m.id, role: 'user', text: m.content }
+        }
+        return {
+          id: m.id,
+          role: 'assistant',
+          title: 'Legal Explanation',
+          text: m.content,
+          explanation: m.content,
+          implication: '',
+          checks: [],
+          consult: '',
+          sources: m.sources || [],
+          caveat: 'This is general legal information, not legal advice.'
+        }
+      })
+      setMessages(formatted)
+    }
+  }
+
+  const startNewChat = () => {
+    setActiveConversationId(null)
+    setMessages([])
+    enter(true)
+    setView('chat')
+  }
+
   const ask = async (question) => {
     if (!question.trim() || thinking) return
-    enter(true); setView('chat'); setMessages((all) => [...all, { id: Date.now(), role: 'user', text: question.trim() }]); setThinking(true)
-    try { const answer = await askLegalQuestion(question, language); setMessages((all) => [...all, answer]) } catch { notify('The response could not be generated. Please try again.') } finally { setThinking(false) }
+    enter(true)
+    setView('chat')
+    setMessages((all) => [...all, { id: Date.now(), role: 'user', text: question.trim() }])
+    setThinking(true)
+    try {
+      const answer = await askLegalQuestion(question, language, activeConversationId)
+      setMessages((all) => [...all, answer])
+      if (answer.conversation_id) {
+        setActiveConversationId(answer.conversation_id)
+        fetchConversations().then(data => {
+          if (Array.isArray(data)) setConversations(data)
+        })
+      }
+    } catch {
+      notify('The response could not be generated. Please try again.')
+    } finally {
+      setThinking(false)
+    }
   }
   const startVoice = () => {
     if (voice !== 'idle') return
@@ -178,8 +237,8 @@ export default function LexAI() {
         </div>
       </header>
       <div className="content" key={view}>
-        {view === 'home' && <Home ask={ask} navigate={navigate} voice={voice} startVoice={startVoice} saved={saved} displayName={displayName} onOpenAuth={() => { setAuthMode('login'); setAuthModalOpen(true); }} />}
-        {view === 'chat' && <Chat messages={messages} ask={ask} thinking={thinking} language={language} setLanguage={setLanguage} voice={voice} startVoice={startVoice} toggleSaved={toggleSaved} copy={copy} regenerate={regenerate} navigate={navigate} notify={notify} />}
+        {view === 'home' && <Home ask={ask} navigate={navigate} voice={voice} startVoice={startVoice} saved={saved} displayName={displayName} onOpenAuth={() => { setAuthMode('login'); setAuthModalOpen(true); }} conversations={conversations} onSelectConversation={selectConversation} />}
+        {view === 'chat' && <Chat messages={messages} ask={ask} thinking={thinking} language={language} setLanguage={setLanguage} voice={voice} startVoice={startVoice} toggleSaved={toggleSaved} copy={copy} regenerate={regenerate} navigate={navigate} notify={notify} conversations={conversations} activeConversationId={activeConversationId} onSelectConversation={selectConversation} onNewChat={startNewChat} />}
         {view === 'documents' && <Documents file={file} fileState={fileState} analysisData={analysisData} upload={upload} sample={sample} ask={ask} onNavigate={navigate} />}
         {view === 'saved' && <Saved answers={saved} toggleSaved={toggleSaved} copy={copy} navigate={navigate} />}
         {view === 'lawyers' && <Lawyers lawyers={lawyersList} notify={notify} onViewProfile={(l) => navigate('lawyer-profile', l)} onRequestConsultation={(l) => navigate('consultation', l)} />}
@@ -220,7 +279,7 @@ function Landing({ enter, demo }) {
 }
 
 function SidebarIcon() { return <Scale size={17} /> }
-function Home({ ask, navigate, voice, startVoice, saved, displayName }) {
+function Home({ ask, navigate, voice, startVoice, saved, displayName, conversations = [], onSelectConversation }) {
   const [query, setQuery] = useState('')
   const send = (e) => { e.preventDefault(); if (query.trim()) { ask(query); setQuery('') } }
   const firstName = displayName ? displayName.split(' ')[0] : 'there'
@@ -269,18 +328,40 @@ function Home({ ask, navigate, voice, startVoice, saved, displayName }) {
       </div>
       <div className="home-bottom">
         <section className="recent-panel">
-          <span className="kicker">PICK UP WHERE YOU LEFT OFF</span>
-          <h2>Recent conversations</h2>
-          <button onClick={() => navigate('chat')}>
-            <Sparkles size={16} />
-            <span><b>What does an indemnity clause mean?</b><small>Today · General information</small></span>
-            <ArrowRight size={14} />
-          </button>
-          <button onClick={() => navigate('chat')}>
-            <FileCheck2 size={16} />
-            <span><b>Rental notice period explained</b><small>Yesterday · Tenant rights</small></span>
-            <ArrowRight size={14} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div>
+              <span className="kicker">PICK UP WHERE YOU LEFT OFF</span>
+              <h2 style={{ margin: 0 }}>Recent conversations</h2>
+            </div>
+            <button className="link-btn" onClick={() => navigate('chat')} style={{ fontSize: '11px', color: '#3f6551', fontWeight: 600 }}>
+              View all <ArrowRight size={12} />
+            </button>
+          </div>
+          {conversations && conversations.length > 0 ? (
+            conversations.slice(0, 3).map((conv) => (
+              <button key={conv.id} onClick={() => onSelectConversation ? onSelectConversation(conv.id) : navigate('chat')}>
+                <Sparkles size={16} />
+                <span>
+                  <b>{conv.title || 'Legal Query'}</b>
+                  <small>{conv.created_at ? new Date(conv.created_at).toLocaleDateString() : 'Recent'} · {conv.language || 'English'}</small>
+                </span>
+                <ArrowRight size={14} />
+              </button>
+            ))
+          ) : (
+            <>
+              <button onClick={() => ask('What does an indemnity clause mean?')}>
+                <Sparkles size={16} />
+                <span><b>What does an indemnity clause mean?</b><small>Example query · General information</small></span>
+                <ArrowRight size={14} />
+              </button>
+              <button onClick={() => ask('What are my rights as a tenant regarding notice periods?')}>
+                <FileCheck2 size={16} />
+                <span><b>Rental notice period explained</b><small>Example query · Tenant rights</small></span>
+                <ArrowRight size={14} />
+              </button>
+            </>
+          )}
         </section>
         <section className="mini-trust">
           <ShieldCheck size={17} />
@@ -299,10 +380,192 @@ function Home({ ask, navigate, voice, startVoice, saved, displayName }) {
   )
 }
 
-function Chat({ messages, ask, thinking, language, setLanguage, startVoice, toggleSaved, copy, regenerate, navigate, notify }) {
-  const [query,setQuery]=useState(''),[sources,setSources]=useState({})
-  const send=(e)=>{e.preventDefault();if(query.trim()){ask(query);setQuery('')}}
-  return <div className="chat-view"><header className="page-head"><div><span className="kicker">YOUR LEGAL INFORMATION ASSISTANT</span><h1>Ask LexAI</h1><p>Clear explanations to help you understand what to look at next.</p></div><label className="select-control"><Globe2 size={14}/><select aria-label="Response language" value={language} onChange={e=>setLanguage(e.target.value)}>{['English','Hindi','Telugu','Tamil','Kannada','Marathi'].map(x=><option key={x}>{x}</option>)}</select><ChevronDown size={13}/></label></header><div className="messages">{messages.length===0&&<div className="chat-empty"><Sparkles size={22}/><h2>Start with a question</h2><p>Ask about a legal term, document or general right.</p><button onClick={()=>setQuery('What does an indemnity clause mean?')}>Explain indemnity</button></div>}{messages.map(m=>m.role==='user'?<div className="user-row" key={m.id}><p>{m.text}</p><span>AM</span></div>:<article className="answer" key={m.id}><span className="answer-avatar"><Scale size={16}/></span><div className="answer-content"><b>LexAI <small>GENERAL INFORMATION</small></b><section><h3><Sparkles size={14}/>{m.title||'Simple Explanation'}</h3><p>{m.explanation||m.text}</p></section><section><h3>What it means for you</h3><p>{m.implication}</p></section><section><h3>Important things to check</h3><ul>{m.checks?.map(x=><li key={x}>{x}</li>)}</ul></section><aside><Info size={15}/><p><b>When to consult a lawyer</b>{m.consult}</p></aside><small className="caveat"><ShieldCheck size={13}/>{m.caveat||'This is general legal information, not legal advice. The exact meaning depends on your agreement and jurisdiction.'}</small><div className="sources"><button onClick={()=>setSources({...sources,[m.id]:!sources[m.id]})}><FileText size={14}/> Sources ({m.sources?.length||0}) <ChevronDown size={13}/></button>{sources[m.id]&&<ul>{m.sources?.map(x=><li key={x}>{x}</li>)}</ul>}</div><div className="answer-actions"><div><button title="Copy answer" onClick={()=>copy(m)}><Clipboard size={14}/></button><button title="Regenerate" onClick={regenerate}><AudioLines size={14}/></button><button title="Save answer" onClick={()=>toggleSaved(m)}><Bookmark size={14}/></button></div><div><button title="Helpful" onClick={()=>notify('Thanks for your feedback.')}><ThumbsUp size={14}/></button><button title="Not helpful" onClick={()=>notify('Thanks for your feedback.')}><ThumbsDown size={14}/></button><button className="talk-lawyer" onClick={()=>navigate('lawyers')}>Talk to a lawyer <ArrowRight size={12}/></button></div></div></div></article>)}{thinking&&<div className="thinking"><span className="answer-avatar"><Scale size={15}/></span>Looking at your question <i/><i/><i/></div>}</div><form className="chat-composer" onSubmit={send}><textarea aria-label="Follow-up question" placeholder="Ask a follow-up question…" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey)send(e)}}/><footer><button type="button" onClick={startVoice} title="Ask using your voice"><Mic size={15}/></button><small>Response in {language}</small><button className="send" disabled={!query.trim()} aria-label="Send question"><Send size={14}/></button></footer></form><p className="chat-disclaimer">LexAI provides legal information, not legal advice. AI complements professional lawyers rather than replacing them.</p></div>
+function Chat({
+  messages,
+  ask,
+  thinking,
+  language,
+  setLanguage,
+  startVoice,
+  toggleSaved,
+  copy,
+  regenerate,
+  navigate,
+  notify,
+  conversations = [],
+  activeConversationId = null,
+  onSelectConversation,
+  onNewChat
+}) {
+  const [query, setQuery] = useState('')
+  const [sources, setSources] = useState({})
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  const send = (e) => {
+    e.preventDefault()
+    if (query.trim()) {
+      ask(query)
+      setQuery('')
+    }
+  }
+
+  return (
+    <div className="chat-container">
+      <aside className={`chat-threads-panel ${historyOpen ? 'open' : 'collapsed-mobile'}`}>
+        <div className="chat-threads-header">
+          <h3><History size={13} /> Threads ({conversations.length})</h3>
+          <button className="new-chat-btn" onClick={onNewChat} title="Start a new legal question">
+            <Plus size={13} /> New Chat
+          </button>
+        </div>
+
+        <div className="chat-threads-list">
+          {conversations.length === 0 ? (
+            <div className="chat-threads-empty">
+              No saved threads yet. Ask a question to begin a new thread.
+            </div>
+          ) : (
+            conversations.map(c => (
+              <button
+                key={c.id}
+                className={`chat-thread-item ${c.id === activeConversationId ? 'active' : ''}`}
+                onClick={() => {
+                  onSelectConversation?.(c.id)
+                  setHistoryOpen(false)
+                }}
+                title={c.title}
+              >
+                <MessageSquare size={13} />
+                <span>{c.title || 'Legal Query'}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
+
+      <div className="chat-main-area">
+        <header className="page-head">
+          <div>
+            <span className="kicker">YOUR LEGAL INFORMATION ASSISTANT</span>
+            <h1>Ask LexAI</h1>
+            <p>Clear explanations to help you understand what to look at next.</p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="chat-history-toggle"
+              onClick={() => setHistoryOpen(!historyOpen)}
+            >
+              <History size={13} /> {historyOpen ? 'Hide History' : `History (${conversations.length})`}
+            </button>
+            <label className="select-control">
+              <Globe2 size={14} />
+              <select aria-label="Response language" value={language} onChange={e => setLanguage(e.target.value)}>
+                {['English', 'Hindi', 'Telugu', 'Tamil', 'Kannada', 'Marathi'].map(x => <option key={x}>{x}</option>)}
+              </select>
+              <ChevronDown size={13} />
+            </label>
+          </div>
+        </header>
+
+        <div className="messages">
+          {messages.length === 0 && (
+            <div className="chat-empty">
+              <Sparkles size={22} />
+              <h2>Start with a question</h2>
+              <p>Ask about a legal term, document clause, or general rights.</p>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button onClick={() => ask('What does an indemnity clause mean?')}>Explain indemnity</button>
+                <button onClick={() => ask('Can a landlord evict a tenant without notice?')}>Eviction rules</button>
+              </div>
+            </div>
+          )}
+
+          {messages.map(m => m.role === 'user' ? (
+            <div className="user-row" key={m.id}>
+              <p>{m.text}</p>
+              <span>AM</span>
+            </div>
+          ) : (
+            <article className="answer" key={m.id}>
+              <span className="answer-avatar"><Scale size={16} /></span>
+              <div className="answer-content">
+                <b>LexAI <small>GENERAL INFORMATION</small></b>
+                <section>
+                  <h3><Sparkles size={14} />{m.title || 'Simple Explanation'}</h3>
+                  <p>{m.explanation || m.text}</p>
+                </section>
+                {m.implication && (
+                  <section>
+                    <h3>What it means for you</h3>
+                    <p>{m.implication}</p>
+                  </section>
+                )}
+                {m.checks && m.checks.length > 0 && (
+                  <section>
+                    <h3>Important things to check</h3>
+                    <ul>{m.checks.map(x => <li key={x}>{x}</li>)}</ul>
+                  </section>
+                )}
+                {m.consult && (
+                  <aside>
+                    <Info size={15} />
+                    <p><b>When to consult a lawyer</b>{m.consult}</p>
+                  </aside>
+                )}
+                <small className="caveat">
+                  <ShieldCheck size={13} />
+                  {m.caveat || 'This is general legal information, not legal advice. The exact meaning depends on your agreement and jurisdiction.'}
+                </small>
+                {m.sources && m.sources.length > 0 && (
+                  <div className="sources">
+                    <button onClick={() => setSources({ ...sources, [m.id]: !sources[m.id] })}>
+                      <FileText size={14} /> Sources ({m.sources.length}) <ChevronDown size={13} />
+                    </button>
+                    {sources[m.id] && <ul>{m.sources.map(x => <li key={x}>{x}</li>)}</ul>}
+                  </div>
+                )}
+                <div className="answer-actions">
+                  <div>
+                    <button title="Copy answer" onClick={() => copy(m)}><Clipboard size={14} /></button>
+                    <button title="Regenerate" onClick={regenerate}><AudioLines size={14} /></button>
+                    <button title="Save answer" onClick={() => toggleSaved(m)}><Bookmark size={14} /></button>
+                  </div>
+                  <div>
+                    <button title="Helpful" onClick={() => notify('Thanks for your feedback.')}><ThumbsUp size={14} /></button>
+                    <button title="Not helpful" onClick={() => notify('Thanks for your feedback.')}><ThumbsDown size={14} /></button>
+                    <button className="talk-lawyer" onClick={() => navigate('lawyers')}>Talk to a lawyer <ArrowRight size={12} /></button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
+
+          {thinking && (
+            <div className="thinking">
+              <span className="answer-avatar"><Scale size={15} /></span>
+              Looking at your question <i /><i /><i />
+            </div>
+          )}
+        </div>
+
+        <form className="chat-composer" onSubmit={send}>
+          <textarea
+            aria-label="Follow-up question"
+            placeholder="Ask a follow-up question…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) send(e) }}
+          />
+          <footer>
+            <button type="button" onClick={startVoice} title="Ask using your voice"><Mic size={15} /></button>
+            <small>Response in {language}</small>
+            <button className="send" disabled={!query.trim()} aria-label="Send question"><Send size={14} /></button>
+          </footer>
+        </form>
+        <p className="chat-disclaimer">LexAI provides legal information, not legal advice. AI complements professional lawyers rather than replacing them.</p>
+      </div>
+    </div>
+  )
 }
 
 function Documents({ file, fileState, analysisData, upload, sample, ask, onNavigate }) {
