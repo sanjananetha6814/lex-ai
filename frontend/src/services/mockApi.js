@@ -300,3 +300,43 @@ export async function analyzeDocument(filename) {
   await pause(300)
   return { filename, detectedText: true, clausesIdentified: true, analyzed: true }
 }
+
+export async function fetchLawyerConsultations(statusFilter = null) {
+  try {
+    const token = await getAuthToken()
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    let url = `${API_BASE}/consultations`
+    if (statusFilter && statusFilter !== 'ALL') {
+      url += `?status=${encodeURIComponent(statusFilter)}`
+    }
+
+    const res = await fetch(url, { headers })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn('⚠️ [API] Failed to fetch consultations for lawyer:', err)
+  }
+  return []
+}
+
+export async function updateConsultationStatus(consultationId, newStatus) {
+  const token = await getAuthToken()
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_BASE}/consultations/${consultationId}/status`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ status: newStatus })
+  })
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.message || 'Failed to update consultation status.')
+  }
+
+  return await res.json()
+}

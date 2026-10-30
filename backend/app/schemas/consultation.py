@@ -15,6 +15,9 @@ class ConsultationCreate(BaseModel):
     issue_description: str = Field(..., min_length=5)
     is_urgent: bool = Field(default=False)
 
+class ConsultationStatusUpdate(BaseModel):
+    status: ConsultationStatus
+
 class ConsultationResponse(BaseModel):
     id: int
     reference_no: str
@@ -34,3 +37,4 @@ class ConsultationResponse(BaseModel):
     lawyer_specialty: Optional[str] = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+

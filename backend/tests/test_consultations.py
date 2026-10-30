@@ -69,3 +69,35 @@ def test_get_consultations_list(client):
     response = client.get("/api/consultations")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+def test_update_consultation_status_success(client):
+    # 1. Create a consultation
+    lawyers = client.get("/api/lawyers").json()
+    lawyer_id = lawyers[0]["id"]
+    payload = {
+        "lawyer_id": lawyer_id,
+        "client_name": "Test Client",
+        "client_email": "test.client@example.com",
+        "client_phone": "+91 98765 22222",
+        "scheduled_date": "2026-11-10",
+        "scheduled_slot": "02:00 PM",
+        "issue_description": "Initial dispute consultation.",
+    }
+    create_res = client.post("/api/consultations", json=payload)
+    assert create_res.status_code == 201
+    c_id = create_res.json()["id"]
+
+    # 2. Update status to CONFIRMED
+    patch_res = client.patch(f"/api/consultations/{c_id}/status", json={"status": "CONFIRMED"})
+    assert patch_res.status_code == 200
+    assert patch_res.json()["status"] == "CONFIRMED"
+
+    # 3. Update status to COMPLETED
+    patch_res2 = client.patch(f"/api/consultations/{c_id}/status", json={"status": "COMPLETED"})
+    assert patch_res2.status_code == 200
+    assert patch_res2.json()["status"] == "COMPLETED"
+
+def test_update_consultation_status_not_found(client):
+    patch_res = client.patch("/api/consultations/99999/status", json={"status": "CANCELLED"})
+    assert patch_res.status_code == 404
+

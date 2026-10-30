@@ -1802,3 +1802,259 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
     display: none;
   }
 }
+
+/* Lawyer Advocate Dashboard */
+.lawyer-dashboard-view {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.lawyer-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, #e2e8e2);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+}
+
+.lawyer-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: #edf5ef;
+  color: #244b36;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: 1px solid #c2dcc8;
+}
+
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.stat-tile {
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, #e2e8e2);
+  border-radius: 8px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-tile span {
+  font-size: 11px;
+  color: var(--muted, #78857e);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-tile b {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text, #1c292d);
+}
+
+.stat-tile.pending b {
+  color: #b45309;
+}
+
+.stat-tile.confirmed b {
+  color: #254437;
+}
+
+.dashboard-filter-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--line, #e2e8e2);
+  padding-bottom: 12px;
+}
+
+.dash-filter-btn {
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--line, #e2e8e2);
+  background: var(--panel, #ffffff);
+  color: var(--muted, #78857e);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.dash-filter-btn.active {
+  background: #254437;
+  color: #ffffff;
+  border-color: #254437;
+}
+
+.consultations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.consultation-card {
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, #e2e8e2);
+  border-radius: 8px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+}
+
+.consultation-card.urgent {
+  border-left: 4px solid #b45309;
+}
+
+.consultation-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.consultation-card-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text, #1c292d);
+}
+
+.consultation-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--soft, #f7f9f6);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.consultation-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.consultation-meta-item small {
+  font-size: 10px;
+  color: var(--muted, #78857e);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.consultation-meta-item b {
+  font-size: 12px;
+  color: var(--text, #1c292d);
+}
+
+.consultation-desc {
+  padding: 12px 14px;
+  background: #fff;
+  border-left: 3px solid #3f6551;
+  border-radius: 0 4px 4px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text, #1c292d);
+  font-style: italic;
+}
+
+.consultation-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--line, #e2e8e2);
+  padding-top: 14px;
+}
+
+.btn-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 4px;
+  background: #254437;
+  color: #ffffff;
+  border: 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.btn-confirm:hover {
+  background: #1c352b;
+}
+
+.btn-decline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 4px;
+  background: transparent;
+  color: #b91c1c;
+  border: 1px solid #f87171;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-decline:hover {
+  background: #fef2f2;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-badge.confirmed {
+  background: #def7ec;
+  color: #03543f;
+  border: 1px solid #bcf0da;
+}
+
+.status-badge.completed {
+  background: #e1effe;
+  color: #1e429f;
+  border: 1px solid #b3c5ff;
+}
+
+.status-badge.cancelled {
+  background: #fde8e8;
+  color: #9b1c1c;
+  border: 1px solid #f8b4b4;
+}
+
+@media (max-width: 850px) {
+  .dashboard-stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

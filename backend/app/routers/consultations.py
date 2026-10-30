@@ -7,7 +7,11 @@ from app.models.consultation import Consultation, ConsultationStatus
 from app.models.lawyer import Lawyer
 from app.models.notification import Notification
 from app.models.user import User, UserRole
-from app.schemas.consultation import ConsultationCreate, ConsultationResponse
+from app.schemas.consultation import (
+    ConsultationCreate,
+    ConsultationResponse,
+    ConsultationStatusUpdate,
+)
 from app.auth import get_current_user_optional
 
 router = APIRouter(prefix="/consultations", tags=["Consultations"])
@@ -102,6 +106,8 @@ def create_consultation(
 def get_consultations(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    lawyer_id: Optional[int] = Query(None),
+    status: Optional[ConsultationStatus] = Query(None),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
@@ -112,9 +118,28 @@ def get_consultations(
         )
     )
 
-    # If user is logged in and not admin, filter to their consultations
-    if current_user and current_user.role != UserRole.ADMIN:
-        query = query.filter(Consultation.user_id == current_user.id)
+    if current_user:
+        if current_user.role == UserRole.ADMIN:
+            if lawyer_id:
+                query = query.filter(Consultation.lawyer_id == lawyer_id)
+        elif current_user.role == UserRole.LAWYER:
+            matched_lawyer = None
+            if current_user.lawyer_account:
+                matched_lawyer = current_user.lawyer_account
+            else:
+                matched_lawyer = db.query(Lawyer).filter(Lawyer.email == current_user.email).first()
+
+            if matched_lawyer:
+                query = query.filter(Consultation.lawyer_id == matched_lawyer.id)
+            elif lawyer_id:
+                query = query.filter(Consultation.lawyer_id == lawyer_id)
+        else:
+            query = query.filter(Consultation.user_id == current_user.id)
+    elif lawyer_id:
+        query = query.filter(Consultation.lawyer_id == lawyer_id)
+
+    if status:
+        query = query.filter(Consultation.status == status)
 
     consultations = query.order_by(Consultation.id.desc()).offset(skip).limit(limit).all()
     return [_format_consultation_response(c) for c in consultations]
@@ -149,3 +174,58 @@ def get_consultation(
             )
 
     return _format_consultation_response(consultation)
+
+@router.patch("/{consultation_id}/status", response_model=ConsultationResponse)
+def update_consultation_status(
+    consultation_id: int,
+    status_in: ConsultationStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    consultation = (
+        db.query(Consultation)
+        .options(
+            joinedload(Consultation.lawyer).joinedload(Lawyer.profile)
+        )
+        .filter(Consultation.id == consultation_id)
+        .first()
+    )
+
+    if not consultation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Consultation with ID {consultation_id} was not found."
+        )
+
+    # If logged in as lawyer, check they don't modify other lawyers' consultations
+    if current_user and current_user.role == UserRole.LAWYER:
+        lawyer_id = current_user.lawyer_account.id if current_user.lawyer_account else None
+        if not lawyer_id:
+            matched = db.query(Lawyer).filter(Lawyer.email == current_user.email).first()
+            if matched:
+                lawyer_id = matched.id
+        if lawyer_id and consultation.lawyer_id != lawyer_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to update consultations for another advocate."
+            )
+
+    consultation.status = status_in.status
+    db.commit()
+    db.refresh(consultation)
+
+    # Notify user if consultation has a linked user account
+    if consultation.user_id:
+        status_label = status_in.status.value.title()
+        notification = Notification(
+            user_id=consultation.user_id,
+            title=f"Consultation Request {status_label}",
+            message=f"Your consultation #{consultation.reference_no} status has been updated to {status_label}.",
+            type="CONSULTATION",
+            is_read=False
+        )
+        db.add(notification)
+        db.commit()
+
+    return _format_consultation_response(consultation)
+

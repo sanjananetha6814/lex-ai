@@ -3,6 +3,7 @@ from app.database import SessionLocal, engine, Base
 from app.models.user import User, UserProfile, UserRole
 from app.models.lawyer import Lawyer, LawyerProfile
 from app.models.notification import Review
+from app.models.consultation import Consultation, ConsultationStatus
 from app.auth import get_password_hash
 
 LAWYERS_DATA = [
@@ -260,13 +261,35 @@ def seed_database(db: Session):
         )
         db.add(demo_profile)
 
+    # Check if demo lawyer user exists (Adv. Ananya Rao)
+    demo_lawyer_user = db.query(User).filter(User.email == "ananya.rao@lexai.directory").first()
+    if not demo_lawyer_user:
+        demo_lawyer_user = User(
+            email="ananya.rao@lexai.directory",
+            password_hash=get_password_hash("LawyerPass123!"),
+            role=UserRole.LAWYER,
+            is_active=True
+        )
+        db.add(demo_lawyer_user)
+        db.flush()
+        lawyer_profile_user = UserProfile(
+            user_id=demo_lawyer_user.id,
+            full_name="Adv. Ananya Rao",
+            phone_number="+91 98450 12345",
+            city="Bengaluru",
+            preferred_language="English"
+        )
+        db.add(lawyer_profile_user)
+
     # Seed lawyers
     for data in LAWYERS_DATA:
         existing_lawyer = db.query(Lawyer).filter(Lawyer.name == data["name"]).first()
         if not existing_lawyer:
+            user_id = demo_lawyer_user.id if data["email"] == "ananya.rao@lexai.directory" else None
             lawyer = Lawyer(
                 name=data["name"],
                 email=data["email"],
+                user_id=user_id,
                 phone=data["phone"],
                 city=data["city"],
                 state=data["state"],
@@ -309,6 +332,47 @@ def seed_database(db: Session):
                     is_verified=True
                 )
                 db.add(review)
+        elif existing_lawyer.email == "ananya.rao@lexai.directory" and not existing_lawyer.user_id:
+            existing_lawyer.user_id = demo_lawyer_user.id
+            db.flush()
+
+    # Seed initial consultation requests for Ananya Rao if none exist
+    ananya_lawyer = db.query(Lawyer).filter(Lawyer.email == "ananya.rao@lexai.directory").first()
+    if ananya_lawyer and db.query(Consultation).filter(Consultation.lawyer_id == ananya_lawyer.id).count() == 0:
+        c1 = Consultation(
+            reference_no="LEX-782194",
+            user_id=demo_user.id if demo_user else None,
+            lawyer_id=ananya_lawyer.id,
+            client_name="Pooja Hegde",
+            client_email="pooja.hegde@example.com",
+            client_phone="+91 98765 11223",
+            client_language="English",
+            format="video",
+            scheduled_date="2026-11-02",
+            scheduled_slot="04:00 PM",
+            issue_description="Landlord served an abrupt notice demanding 20% rent hike and asking to vacate within 15 days.",
+            is_urgent=True,
+            fee="₹1,500",
+            status=ConsultationStatus.PENDING
+        )
+        c2 = Consultation(
+            reference_no="LEX-391482",
+            user_id=demo_user.id if demo_user else None,
+            lawyer_id=ananya_lawyer.id,
+            client_name="Siddharth K.",
+            client_email="siddharth.k@example.com",
+            client_phone="+91 98765 99887",
+            client_language="English",
+            format="phone",
+            scheduled_date="2026-11-04",
+            scheduled_slot="11:30 AM",
+            issue_description="Review of builder-buyer apartment conveyance deed and khata registration checklist.",
+            is_urgent=False,
+            fee="₹1,500",
+            status=ConsultationStatus.CONFIRMED
+        )
+        db.add(c1)
+        db.add(c2)
 
     db.commit()
 

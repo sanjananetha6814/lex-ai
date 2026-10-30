@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, AudioLines, Award, Bookmark, Briefcase, Building2, Calendar, Check, ChevronDown, CircleHelp, Clipboard, Clock, FileCheck2, FileSearch, FileText, Filter, Globe2, Heart, History, Info, Languages, LockKeyhole, MapPin, Menu, MessageCircle, MessageSquare, Mic, Moon, MoreHorizontal, Phone, Plus, Scale, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Star, Sun, ThumbsDown, ThumbsUp, Upload, UserRoundCheck, Video, X } from 'lucide-react'
-import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser, fetchConversations, fetchConversation } from './services/mockApi.js'
+import { askLegalQuestion, uploadAndAnalyzeDocument, loginUser, registerUser, fetchCurrentUser, logoutUser, fetchConversations, fetchConversation, fetchLawyerConsultations, updateConsultationStatus } from './services/mockApi.js'
+
 
 const initialMessages = [
   { id: 1, role: 'user', text: 'What does an indemnity clause mean?' },
@@ -199,7 +200,14 @@ export default function LexAI() {
       <div className="brand-row"><button className="brand" onClick={() => navigate('home')}><span className="brand-icon"><Scale size={18} /></span><span>Lex<span>AI</span><small>LEGAL CLARITY, FOR ALL</small></span></button><button className="mobile-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close menu"><X size={17} /></button></div>
       <button className="new-chat" onClick={() => { setMessages([]); navigate('chat') }}><Plus size={16} /> New conversation <small>⌘ K</small></button>
       <span className="side-label">WORKSPACE</span>
-      <nav>{[['home','Overview',MessageCircle],['chat','Chat',MessageCircle],['documents','Documents',FileText],['saved','Saved answers',Bookmark],['lawyers','Lawyer connect',UserRoundCheck]].map(([id,label,Icon]) => <button key={id} className={`side-link ${view === id || (id === 'lawyers' && (view === 'lawyer-profile' || view === 'consultation')) ? 'selected' : ''}`} onClick={() => navigate(id)}><Icon size={16} />{label}</button>)}</nav>
+      <nav>{[
+        ['home','Overview',MessageCircle],
+        ['chat','Chat',MessageCircle],
+        ['documents','Documents',FileText],
+        ['saved','Saved answers',Bookmark],
+        ['lawyers','Lawyer connect',UserRoundCheck],
+        ...(currentUser?.role === 'LAWYER' ? [['lawyer-dashboard', 'Advocate Portal', Briefcase]] : [])
+      ].map(([id,label,Icon]) => <button key={id} className={`side-link ${view === id || (id === 'lawyers' && (view === 'lawyer-profile' || view === 'consultation')) ? 'selected' : ''}`} onClick={() => navigate(id)}><Icon size={16} />{label}</button>)}</nav>
       <span className="side-label recent-label">RECENT</span><button className="recent-link" onClick={() => navigate('chat')}>● Indemnity clause, simply explained</button><button className="recent-link" onClick={() => navigate('chat')}>● Tenant rights and notice periods</button>
       <div className="side-bottom"><div className="side-privacy"><ShieldCheck size={16} /><span><strong>Your privacy matters</strong><small>Documents are processed securely</small></span></div><button className={`side-link ${view === 'settings' ? 'selected' : ''}`} onClick={() => navigate('settings')}><Settings size={16} />Settings</button><button className="user-mini" onClick={() => { setAuthMode('login'); setAuthModalOpen(true); }} title="Click to switch account or sign in"><i>{initials}</i><span><strong>{displayName}</strong><small>{currentUser?.role === 'LAWYER' ? 'Advocate Profile' : isDemo ? 'Demo Workspace' : 'Personal Workspace'}</small></span><MoreHorizontal size={17} /></button></div>
     </aside>
@@ -226,7 +234,7 @@ export default function LexAI() {
                 <strong>Request Consultation</strong>
               </>
             ) : (
-              <strong>{({home:'Chat',chat:'Chat',documents:'Documents',saved:'Saved Answers',lawyers:'Lawyer Connect',settings:'Settings'})[view] || 'Lawyer Connect'}</strong>
+              <strong>{({home:'Chat',chat:'Chat',documents:'Documents',saved:'Saved Answers',lawyers:'Lawyer Connect','lawyer-dashboard':'Advocate Portal',settings:'Settings'})[view] || 'Lawyer Connect'}</strong>
             )}
           </div>
           <div className="top-actions">
@@ -244,6 +252,7 @@ export default function LexAI() {
         {view === 'lawyers' && <Lawyers lawyers={lawyersList} notify={notify} onViewProfile={(l) => navigate('lawyer-profile', l)} onRequestConsultation={(l) => navigate('consultation', l)} />}
         {view === 'lawyer-profile' && <LawyerProfile lawyer={selectedLawyer} onBack={() => navigate('lawyers')} onRequestConsultation={(l) => navigate('consultation', l)} />}
         {view === 'consultation' && <ConsultationRequest lawyer={selectedLawyer} onBack={() => navigate('lawyer-profile', selectedLawyer)} notify={notify} navigate={navigate} />}
+        {view === 'lawyer-dashboard' && <LawyerDashboard currentUser={currentUser} notify={notify} />}
         {view === 'settings' && <SettingsPage language={language} setLanguage={setLanguage} dark={dark} setDark={setDark} notify={notify} currentUser={currentUser} displayName={displayName} initials={initials} onOpenAuth={(mode = 'login') => { setAuthMode(mode); setAuthModalOpen(true); }} onLogout={handleLogout} />}
       </div>
       <footer className="app-disclaimer">LexAI provides legal information, not legal advice. AI complements professional lawyers rather than replacing them.</footer>
@@ -1473,6 +1482,221 @@ function ConsultationRequest({ lawyer, onBack, notify, navigate }) {
   )
 }
 
+function LawyerDashboard({ currentUser, notify }) {
+  const [consultations, setConsultations] = useState([])
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [loading, setLoading] = useState(true)
+  const [updatingId, setUpdatingId] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    fetchLawyerConsultations(statusFilter)
+      .then(data => {
+        if (active && Array.isArray(data)) setConsultations(data)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [statusFilter, currentUser])
+
+  const handleStatusChange = async (consultationId, newStatus) => {
+    setUpdatingId(consultationId)
+    try {
+      const updated = await updateConsultationStatus(consultationId, newStatus)
+      notify(`Consultation #${updated.reference_no} updated to ${newStatus}.`)
+      setConsultations(prev => prev.map(c => c.id === consultationId ? updated : c))
+    } catch (err) {
+      notify(err.message || 'Could not update status.')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const total = consultations.length
+  const pending = consultations.filter(c => c.status === 'PENDING').length
+  const confirmed = consultations.filter(c => c.status === 'CONFIRMED').length
+  const completed = consultations.filter(c => c.status === 'COMPLETED').length
+
+  const filtered = statusFilter === 'ALL'
+    ? consultations
+    : consultations.filter(c => c.status === statusFilter)
+
+  return (
+    <div className="lawyer-dashboard-view">
+      <header className="page-head">
+        <div>
+          <span className="kicker">LEGAL ADVOCATE WORKSPACE</span>
+          <h1>Advocate Portal</h1>
+          <p>Review inbound client consultation requests, verify legal matters, and manage appointments.</p>
+        </div>
+        <div className="lawyer-badge-pill">
+          <Scale size={14} /> Bar Council Verified Advocate
+        </div>
+      </header>
+
+      <div className="dashboard-stats-grid">
+        <div className="stat-tile">
+          <span>Total Inbound</span>
+          <b>{total}</b>
+        </div>
+        <div className="stat-tile pending">
+          <span>Pending Action</span>
+          <b>{pending}</b>
+        </div>
+        <div className="stat-tile confirmed">
+          <span>Confirmed Slots</span>
+          <b>{confirmed}</b>
+        </div>
+        <div className="stat-tile">
+          <span>Completed</span>
+          <b>{completed}</b>
+        </div>
+      </div>
+
+      <div className="dashboard-filter-tabs">
+        {[
+          ['ALL', `All Matters (${total})`],
+          ['PENDING', `Pending Review (${pending})`],
+          ['CONFIRMED', `Confirmed (${confirmed})`],
+          ['COMPLETED', `Completed (${completed})`],
+          ['CANCELLED', 'Declined / Cancelled']
+        ].map(([filterKey, label]) => (
+          <button
+            key={filterKey}
+            type="button"
+            className={`dash-filter-btn ${statusFilter === filterKey ? 'active' : ''}`}
+            onClick={() => setStatusFilter(filterKey)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="processing" style={{ minHeight: '160px' }}>
+          <span className="spinner" />
+          <p>Loading consultation requests…</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="empty" style={{ padding: '40px 20px', textAlign: 'center' }}>
+          <h2>No consultation requests found</h2>
+          <p>Clients who request a consultation with you will appear here in your dashboard.</p>
+        </div>
+      ) : (
+        <div className="consultations-list">
+          {filtered.map(c => {
+            const isUpdating = updatingId === c.id
+            return (
+              <div key={c.id} className={`consultation-card ${c.is_urgent ? 'urgent' : ''}`}>
+                <div className="consultation-card-head">
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <h3>{c.client_name}</h3>
+                      {c.is_urgent && (
+                        <span style={{ fontSize: '10px', background: '#fee2e2', color: '#991b1b', padding: '2px 7px', borderRadius: '4px', fontWeight: 700 }}>
+                          URGENT
+                        </span>
+                      )}
+                      <span className={`status-badge ${c.status.toLowerCase()}`}>
+                        {c.status}
+                      </span>
+                    </div>
+                    <small style={{ color: 'var(--muted, #78857e)' }}>
+                      Ref: #{c.reference_no} · Booked {c.created_at ? new Date(c.created_at).toLocaleDateString() : 'Recently'}
+                    </small>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <b style={{ fontSize: '15px', color: '#254437' }}>{c.fee || '₹1,500'}</b>
+                    <small style={{ display: 'block', fontSize: '10px', color: 'var(--muted, #78857e)' }}>Per 30-min consultation</small>
+                  </div>
+                </div>
+
+                <div className="consultation-meta-grid">
+                  <div className="consultation-meta-item">
+                    <small>Scheduled Appointment</small>
+                    <b><Calendar size={12} style={{ display: 'inline', marginRight: '4px' }} />{c.scheduled_date} · {c.scheduled_slot}</b>
+                  </div>
+                  <div className="consultation-meta-item">
+                    <small>Meeting Format</small>
+                    <b>{c.format === 'video' ? 'Secure Video Conference' : 'Direct Phone Call'}</b>
+                  </div>
+                  <div className="consultation-meta-item">
+                    <small>Client Contact</small>
+                    <b>{c.client_email}</b>
+                    <small style={{ textTransform: 'none' }}>{c.client_phone}</small>
+                  </div>
+                  <div className="consultation-meta-item">
+                    <small>Preferred Language</small>
+                    <b>{c.client_language || 'English'}</b>
+                  </div>
+                </div>
+
+                {c.issue_description && (
+                  <div className="consultation-desc">
+                    <strong>Legal Matter Summary:</strong> “{c.issue_description}”
+                  </div>
+                )}
+
+                <div className="consultation-actions-row">
+                  {c.status === 'PENDING' && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-decline"
+                        disabled={isUpdating}
+                        onClick={() => handleStatusChange(c.id, 'CANCELLED')}
+                      >
+                        <X size={14} /> Decline Matter
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={isUpdating}
+                        onClick={() => handleStatusChange(c.id, 'CONFIRMED')}
+                      >
+                        <Check size={14} /> {isUpdating ? 'Updating…' : 'Accept & Confirm Appointment'}
+                      </button>
+                    </>
+                  )}
+
+                  {c.status === 'CONFIRMED' && (
+                    <>
+                      <span style={{ fontSize: '11px', color: 'var(--muted, #78857e)', marginRight: 'auto' }}>
+                        Appointment confirmed. Ready for scheduled session.
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={isUpdating}
+                        onClick={() => handleStatusChange(c.id, 'COMPLETED')}
+                      >
+                        <Check size={14} /> Mark as Completed
+                      </button>
+                    </>
+                  )}
+
+                  {c.status === 'COMPLETED' && (
+                    <span style={{ fontSize: '11px', color: '#1e429f', fontWeight: 600 }}>
+                      ✓ Consultation successfully completed
+                    </span>
+                  )}
+
+                  {c.status === 'CANCELLED' && (
+                    <span style={{ fontSize: '11px', color: '#991b1b', fontWeight: 600 }}>
+                      ✕ Request declined / cancelled
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SettingsPage({ language, setLanguage, dark, setDark, notify, currentUser, displayName, initials, onOpenAuth, onLogout }) {
   const isDemo = currentUser?.email === 'alex.morgan@workspace.lexai'
 
@@ -1725,13 +1949,28 @@ function AuthModal({ isOpen, onClose, initialMode = 'login', onAuthSuccess, noti
           </button>
 
           {mode === 'login' && (
-            <button
-              type="button"
-              className="auth-demo-btn"
-              onClick={handleFillDemo}
-            >
-              <Sparkles size={13} /> Fill Demo Credentials (Alex Morgan)
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <button
+                type="button"
+                className="auth-demo-btn"
+                onClick={handleFillDemo}
+              >
+                <Sparkles size={13} /> Fill Demo Client (Alex Morgan)
+              </button>
+              <button
+                type="button"
+                className="auth-demo-btn"
+                style={{ borderColor: '#3f6551', color: '#254437' }}
+                onClick={() => {
+                  setMode('login')
+                  setEmail('ananya.rao@lexai.directory')
+                  setPassword('LawyerPass123!')
+                  setError('')
+                }}
+              >
+                <Briefcase size={13} /> Fill Demo Advocate (Adv. Ananya Rao)
+              </button>
+            </div>
           )}
         </form>
       </div>
