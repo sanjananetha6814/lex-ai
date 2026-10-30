@@ -88,10 +88,11 @@ def create_consultation(
 
     # 1. Notify Client if logged in
     if current_user:
+        adv_name = lawyer.name if lawyer.name.startswith("Adv. ") else f"Adv. {lawyer.name}"
         notification = Notification(
             user_id=current_user.id,
             title="Consultation Request Submitted",
-            message=f"Your consultation request #{ref_no} with Adv. {lawyer.name} has been received.",
+            message=f"Your consultation request #{ref_no} with {adv_name} has been received.",
             type="CONSULTATION",
             is_read=False
         )
@@ -233,7 +234,10 @@ def update_consultation_status(
 
     # Notify user if consultation has a linked user account
     if consultation.user_id:
-        lawyer_display = f"Adv. {consultation.lawyer.name}" if consultation.lawyer else "Your advocate"
+        if consultation.lawyer:
+            lawyer_display = consultation.lawyer.name if consultation.lawyer.name.startswith("Adv. ") else f"Adv. {consultation.lawyer.name}"
+        else:
+            lawyer_display = "Your advocate"
         if status_in.status == ConsultationStatus.CONFIRMED:
             title = "Consultation Confirmed"
             message = f"{lawyer_display} confirmed your consultation #{consultation.reference_no} for {consultation.scheduled_date} at {consultation.scheduled_slot}."
