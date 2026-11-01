@@ -2,6 +2,7 @@ from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from app.models.consultation import ConsultationStatus
+from app.schemas.lawyer import ReviewResponse
 
 class ConsultationCreate(BaseModel):
     lawyer_id: int
@@ -35,6 +36,7 @@ class ConsultationResponse(BaseModel):
     status: ConsultationStatus
     lawyer_name: Optional[str] = None
     lawyer_specialty: Optional[str] = None
+    is_reviewed: bool = False
+    user_review: Optional[ReviewResponse] = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
-

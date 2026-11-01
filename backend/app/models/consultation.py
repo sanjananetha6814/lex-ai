@@ -39,3 +39,4 @@ class Consultation(Base, TimestampMixin):
     # Relationships
     user = relationship("User", back_populates="consultations")
     lawyer = relationship("Lawyer", back_populates="consultations")
+    review = relationship("Review", back_populates="consultation", uselist=False)

@@ -68,6 +68,7 @@ import {
   fetchNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  submitConsultationReview,
 } from './services/mockApi'
 import type {
   User,
@@ -525,6 +526,7 @@ export default function LexAI() {
   })
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [reviewModalConsultation, setReviewModalConsultation] = useState<ConsultationResponse | null>(null)
   const [userConsultations, setUserConsultations] = useState<ConsultationResponse[]>([])
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState<number>(0)
@@ -591,7 +593,7 @@ export default function LexAI() {
     }
   }, [notificationsOpen])
 
-  useEffect(() => {
+  const loadLawyers = () => {
     fetch(`${API_BASE}/lawyers`)
       .then((res) => (res.ok ? (res.json() as Promise<BackendLawyer[]>) : null))
       .then((data) => {
@@ -607,6 +609,10 @@ export default function LexAI() {
         }
       })
       .catch(() => {})
+  }
+
+  useEffect(() => {
+    loadLawyers()
   }, [])
 
   useEffect(() => {
@@ -1030,6 +1036,7 @@ export default function LexAI() {
               conversations={conversations}
               onSelectConversation={selectConversation}
               userConsultations={userConsultations}
+              onOpenReviewModal={(c) => setReviewModalConsultation(c)}
             />
           )}
           {view === 'chat' && (
@@ -1137,6 +1144,15 @@ export default function LexAI() {
         initialMode={authMode}
         onAuthSuccess={(user) => {
           setCurrentUser(user)
+        }}
+        notify={notify}
+      />
+      <ConsultationReviewModal
+        consultation={reviewModalConsultation}
+        onClose={() => setReviewModalConsultation(null)}
+        onReviewSubmitted={() => {
+          loadUserConsultations()
+          loadLawyers()
         }}
         notify={notify}
       />
@@ -1578,6 +1594,7 @@ interface HomeProps {
   conversations: Conversation[]
   onSelectConversation?: (id: number) => void
   userConsultations: ConsultationResponse[]
+  onOpenReviewModal?: (c: ConsultationResponse) => void
 }
 
 function Home({
@@ -1590,6 +1607,7 @@ function Home({
   conversations = [],
   onSelectConversation,
   userConsultations = [],
+  onOpenReviewModal,
 }: HomeProps) {
   const [query, setQuery] = useState<string>('')
   const send = (e: FormEvent<HTMLFormElement> | KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1769,6 +1787,30 @@ function Home({
                       <Scale size={13} /> {c.fee || '₹1,500'}
                     </span>
                   </div>
+                  {c.status === 'COMPLETED' && (
+                    <div className="consultation-review-container">
+                      {c.is_reviewed || c.user_review ? (
+                        <div className="client-review-badge">
+                          <span className="client-review-stars">
+                            {'★'.repeat(c.user_review?.rating || 5)}
+                          </span>
+                          <span className="client-review-text">
+                            {c.user_review?.comment
+                              ? `"${c.user_review.comment}"`
+                              : 'Consultation reviewed & rated'}
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rate-advocate-btn"
+                          onClick={() => onOpenReviewModal && onOpenReviewModal(c)}
+                        >
+                          <Star size={13} fill="#d97706" color="#d97706" /> Rate & Review Advocate
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -3956,6 +3998,149 @@ function AuthModal({
               </button>
             </div>
           )}
+        </form>
+      </div>
+    </div>
+  )
+}
+
+interface ConsultationReviewModalProps {
+  consultation: ConsultationResponse | null
+  onClose: () => void
+  onReviewSubmitted: () => void
+  notify: (msg: string) => void
+}
+
+function ConsultationReviewModal({
+  consultation,
+  onClose,
+  onReviewSubmitted,
+  notify,
+}: ConsultationReviewModalProps) {
+  const [rating, setRating] = useState<number>(5)
+  const [hoverRating, setHoverRating] = useState<number>(0)
+  const [comment, setComment] = useState<string>('')
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>('')
+
+  if (!consultation) return null
+
+  const ratingLabels: Record<number, string> = {
+    1: 'Poor - Not satisfactory',
+    2: 'Fair - Needs improvement',
+    3: 'Good - Met expectations',
+    4: 'Very Good - Thorough & helpful',
+    5: 'Excellent - Exceptional legal clarity',
+  }
+
+  const activeRating = hoverRating || rating
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!comment.trim() || comment.trim().length < 3) {
+      setError('Please provide review feedback of at least 3 characters.')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    try {
+      await submitConsultationReview(consultation.id, rating, comment.trim())
+      notify('Thank you! Your verified review has been submitted.')
+      onReviewSubmitted()
+      onClose()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to submit review.'
+      setError(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="auth-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="auth-card review-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="auth-header">
+          <div>
+            <span className="kicker">CLIENT FEEDBACK & RATING</span>
+            <h2>Review Consultation</h2>
+            <p className="modal-sub">
+              Adv. {consultation.lawyer_name || 'Counsel'} · #{consultation.reference_no}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="close-btn"
+            onClick={onClose}
+            aria-label="Close review modal"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="auth-error" style={{ marginBottom: '14px' }}>
+            <Info size={14} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="review-modal-form">
+          <div className="rating-selector-group">
+            <label className="field-label">How would you rate this consultation?</label>
+            <div className="star-rating-row">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  className={`star-select-btn ${star <= activeRating ? 'active' : ''}`}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(0)}
+                  onClick={() => setRating(star)}
+                  aria-label={`${star} star rating`}
+                >
+                  <Star
+                    size={24}
+                    fill={star <= activeRating ? '#d97706' : 'none'}
+                    color={star <= activeRating ? '#d97706' : '#cbd5e1'}
+                  />
+                </button>
+              ))}
+              <span className="rating-score-label">{activeRating} / 5</span>
+            </div>
+            <span className="rating-desc-hint">{ratingLabels[activeRating] || ''}</span>
+          </div>
+
+          <div className="auth-field" style={{ marginTop: '4px' }}>
+            <label htmlFor="review-comment">Your Review & Feedback</label>
+            <textarea
+              id="review-comment"
+              rows={4}
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Share how the advocate helped resolve your query, statutory clauses clarified, or actionable next steps..."
+              required
+              className="review-textarea"
+            />
+          </div>
+
+          <div className="review-modal-actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onClose}
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={loading || comment.trim().length < 3}
+            >
+              {loading ? 'Submitting...' : 'Submit Verified Review'}
+            </button>
+          </div>
         </form>
       </div>
     </div>

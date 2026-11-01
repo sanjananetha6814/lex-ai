@@ -497,6 +497,29 @@ export async function updateConsultationStatus(
   return (await res.json()) as ConsultationResponse
 }
 
+export async function submitConsultationReview(
+  consultationId: number,
+  rating: number,
+  comment: string
+): Promise<any> {
+  const token = await getAuthToken()
+  const headers: HeadersInit = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_BASE}/consultations/${consultationId}/review`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ rating, comment })
+  })
+
+  if (!res.ok) {
+    const errData = (await res.json().catch(() => ({}))) as { message?: string; detail?: string }
+    throw new Error(errData.message || errData.detail || 'Failed to submit review.')
+  }
+
+  return await res.json()
+}
+
 export async function fetchNotifications(unreadOnly = false): Promise<NotificationListResponse> {
   try {
     const token = await getAuthToken()

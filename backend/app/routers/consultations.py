@@ -5,13 +5,14 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.consultation import Consultation, ConsultationStatus
 from app.models.lawyer import Lawyer
-from app.models.notification import Notification
+from app.models.notification import Notification, Review
 from app.models.user import User, UserRole
 from app.schemas.consultation import (
     ConsultationCreate,
     ConsultationResponse,
     ConsultationStatusUpdate,
 )
+from app.schemas.lawyer import ReviewCreate, ReviewResponse
 from app.auth import get_current_user_optional
 
 router = APIRouter(prefix="/consultations", tags=["Consultations"])
@@ -19,6 +20,10 @@ router = APIRouter(prefix="/consultations", tags=["Consultations"])
 def _format_consultation_response(c: Consultation) -> ConsultationResponse:
     lawyer_name = c.lawyer.name if c.lawyer else None
     lawyer_specialty = c.lawyer.profile.specialty if c.lawyer and c.lawyer.profile else None
+    has_review = c.review is not None
+    user_rev = None
+    if has_review:
+        user_rev = ReviewResponse.model_validate(c.review)
     return ConsultationResponse(
         id=c.id,
         reference_no=c.reference_no,
@@ -36,6 +41,8 @@ def _format_consultation_response(c: Consultation) -> ConsultationResponse:
         status=c.status,
         lawyer_name=lawyer_name,
         lawyer_specialty=lawyer_specialty,
+        is_reviewed=has_review,
+        user_review=user_rev,
         created_at=c.created_at
     )
 
@@ -132,7 +139,8 @@ def get_consultations(
     query = (
         db.query(Consultation)
         .options(
-            joinedload(Consultation.lawyer).joinedload(Lawyer.profile)
+            joinedload(Consultation.lawyer).joinedload(Lawyer.profile),
+            joinedload(Consultation.review)
         )
     )
 
@@ -171,7 +179,8 @@ def get_consultation(
     consultation = (
         db.query(Consultation)
         .options(
-            joinedload(Consultation.lawyer).joinedload(Lawyer.profile)
+            joinedload(Consultation.lawyer).joinedload(Lawyer.profile),
+            joinedload(Consultation.review)
         )
         .filter(Consultation.id == consultation_id)
         .first()
@@ -203,7 +212,8 @@ def update_consultation_status(
     consultation = (
         db.query(Consultation)
         .options(
-            joinedload(Consultation.lawyer).joinedload(Lawyer.profile)
+            joinedload(Consultation.lawyer).joinedload(Lawyer.profile),
+            joinedload(Consultation.review)
         )
         .filter(Consultation.id == consultation_id)
         .first()
@@ -246,7 +256,7 @@ def update_consultation_status(
             message = f"Your consultation request #{consultation.reference_no} with {lawyer_display} was declined."
         elif status_in.status == ConsultationStatus.COMPLETED:
             title = "Consultation Completed"
-            message = f"Your consultation #{consultation.reference_no} with {lawyer_display} has been marked as completed."
+            message = f"Your consultation #{consultation.reference_no} with {lawyer_display} has been marked as completed. You can now leave a review."
         else:
             status_label = status_in.status.value.title()
             title = f"Consultation Request {status_label}"
@@ -264,3 +274,93 @@ def update_consultation_status(
 
     return _format_consultation_response(consultation)
 
+@router.post("/{consultation_id}/review", response_model=ReviewResponse, status_code=status.HTTP_201_CREATED)
+def review_consultation(
+    consultation_id: int,
+    review_in: ReviewCreate,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    consultation = (
+        db.query(Consultation)
+        .options(
+            joinedload(Consultation.lawyer).joinedload(Lawyer.profile),
+            joinedload(Consultation.review)
+        )
+        .filter(Consultation.id == consultation_id)
+        .first()
+    )
+
+    if not consultation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Consultation with ID {consultation_id} was not found."
+        )
+
+    if consultation.status != ConsultationStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reviews can only be submitted for completed consultations."
+        )
+
+    if consultation.review is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This consultation has already been reviewed."
+        )
+
+    # Permission check if user logged in
+    if current_user and current_user.role == UserRole.USER:
+        if consultation.user_id and consultation.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to review this consultation."
+            )
+
+    client_name = consultation.client_name
+    if current_user and current_user.profile and current_user.profile.full_name:
+        client_name = current_user.profile.full_name
+
+    new_review = Review(
+        lawyer_id=consultation.lawyer_id,
+        user_id=current_user.id if current_user else consultation.user_id,
+        consultation_id=consultation.id,
+        client_name=client_name,
+        rating=review_in.rating,
+        comment=review_in.comment.strip(),
+        is_verified=True
+    )
+    db.add(new_review)
+    db.flush()
+
+    # Recalculate lawyer's rating & review count
+    lawyer = consultation.lawyer
+    if lawyer and lawyer.profile:
+        all_reviews = db.query(Review).filter(Review.lawyer_id == lawyer.id).all()
+        if all_reviews:
+            avg_rating = sum(r.rating for r in all_reviews) / len(all_reviews)
+            lawyer.profile.rating = round(avg_rating, 1)
+            lawyer.profile.review_count = f"{len(all_reviews)}"
+
+    # Notify lawyer of new review
+    lawyer_user_id = lawyer.user_id if lawyer else None
+    if lawyer and not lawyer_user_id:
+        matched = db.query(User).filter(User.email == lawyer.email).first()
+        if matched:
+            lawyer_user_id = matched.id
+
+    if lawyer_user_id:
+        star_str = "★" * review_in.rating
+        notif = Notification(
+            user_id=lawyer_user_id,
+            title="New Client Review Received",
+            message=f"{client_name} left a {review_in.rating}/5 stars review ({star_str}): \"{review_in.comment.strip()[:80]}\"",
+            type="REVIEW",
+            is_read=False
+        )
+        db.add(notif)
+
+    db.commit()
+    db.refresh(new_review)
+
+    return new_review

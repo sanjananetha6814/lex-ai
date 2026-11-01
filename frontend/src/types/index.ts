@@ -72,10 +72,20 @@ export interface LawyerProfileData {
 
 export interface BackendLawyerReview {
   id?: number
+  lawyer_id?: number
+  user_id?: number | null
+  consultation_id?: number | null
   client_name: string
   rating: number
   comment: string
+  is_verified?: boolean
   created_at?: string
+}
+
+export interface ReviewCreateRequest {
+  consultation_id?: number
+  rating: number
+  comment: string
 }
 
 export interface BackendLawyer {
@@ -154,6 +164,8 @@ export interface ConsultationResponse {
   status: ConsultationStatus
   lawyer_name?: string | null
   lawyer_specialty?: string | null
+  is_reviewed?: boolean
+  user_review?: BackendLawyerReview | null
   created_at?: string
 }
 

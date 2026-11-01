@@ -9,6 +9,7 @@ class Review(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, index=True)
     lawyer_id = Column(Integer, ForeignKey("lawyers.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    consultation_id = Column(Integer, ForeignKey("consultations.id", ondelete="SET NULL"), nullable=True)
     client_name = Column(String(255), nullable=False)
     rating = Column(Integer, default=5, nullable=False)
     comment = Column(Text, nullable=False)
@@ -16,6 +17,7 @@ class Review(Base, TimestampMixin):
 
     lawyer = relationship("Lawyer", back_populates="reviews")
     user = relationship("User", back_populates="reviews")
+    consultation = relationship("Consultation", back_populates="review")
 
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
