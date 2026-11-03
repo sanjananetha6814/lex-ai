@@ -1,4 +1,14 @@
 def test_create_consultation_success(client):
+    # Register/authenticate Priya Sharma
+    reg_res = client.post("/api/auth/register", json={
+        "email": "priya.sharma@example.com",
+        "password": "Password123!",
+        "full_name": "Priya Sharma",
+        "city": "Bengaluru"
+    })
+    token = reg_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
     # Get an existing lawyer ID
     lawyers = client.get("/api/lawyers").json()
     lawyer_id = lawyers[0]["id"]
@@ -16,7 +26,7 @@ def test_create_consultation_success(client):
         "is_urgent": True
     }
 
-    response = client.post("/api/consultations", json=payload)
+    response = client.post("/api/consultations", json=payload, headers=headers)
     assert response.status_code == 201
     data = response.json()
     assert "reference_no" in data
@@ -29,8 +39,8 @@ def test_create_consultation_success(client):
 
     consultation_id = data["id"]
 
-    # Verify retrieval by ID
-    get_resp = client.get(f"/api/consultations/{consultation_id}")
+    # Verify retrieval by ID with authenticated client headers
+    get_resp = client.get(f"/api/consultations/{consultation_id}", headers=headers)
     assert get_resp.status_code == 200
     assert get_resp.json()["reference_no"] == data["reference_no"]
 
@@ -71,7 +81,16 @@ def test_get_consultations_list(client):
     assert isinstance(response.json(), list)
 
 def test_update_consultation_status_success(client):
-    # 1. Create a consultation
+    # 1. Create a consultation with client
+    reg_res = client.post("/api/auth/register", json={
+        "email": "test.client@example.com",
+        "password": "Password123!",
+        "full_name": "Test Client",
+        "city": "Bengaluru"
+    })
+    client_token = reg_res.json()["access_token"]
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+
     lawyers = client.get("/api/lawyers").json()
     lawyer_id = lawyers[0]["id"]
     payload = {
@@ -83,21 +102,36 @@ def test_update_consultation_status_success(client):
         "scheduled_slot": "02:00 PM",
         "issue_description": "Initial dispute consultation.",
     }
-    create_res = client.post("/api/consultations", json=payload)
+    create_res = client.post("/api/consultations", json=payload, headers=client_headers)
     assert create_res.status_code == 201
     c_id = create_res.json()["id"]
 
+    # Authenticate as assigned advocate (Adv. Ananya Rao)
+    lawyer_login = client.post("/api/auth/login", json={
+        "email": "ananya.rao@lexai.directory",
+        "password": "LawyerPass123!"
+    })
+    lawyer_token = lawyer_login.json()["access_token"]
+    lawyer_headers = {"Authorization": f"Bearer {lawyer_token}"}
+
     # 2. Update status to CONFIRMED
-    patch_res = client.patch(f"/api/consultations/{c_id}/status", json={"status": "CONFIRMED"})
+    patch_res = client.patch(f"/api/consultations/{c_id}/status", json={"status": "CONFIRMED"}, headers=lawyer_headers)
     assert patch_res.status_code == 200
     assert patch_res.json()["status"] == "CONFIRMED"
 
     # 3. Update status to COMPLETED
-    patch_res2 = client.patch(f"/api/consultations/{c_id}/status", json={"status": "COMPLETED"})
+    patch_res2 = client.patch(f"/api/consultations/{c_id}/status", json={"status": "COMPLETED"}, headers=lawyer_headers)
     assert patch_res2.status_code == 200
     assert patch_res2.json()["status"] == "COMPLETED"
 
 def test_update_consultation_status_not_found(client):
-    patch_res = client.patch("/api/consultations/99999/status", json={"status": "CANCELLED"})
+    lawyer_login = client.post("/api/auth/login", json={
+        "email": "ananya.rao@lexai.directory",
+        "password": "LawyerPass123!"
+    })
+    lawyer_token = lawyer_login.json()["access_token"]
+    lawyer_headers = {"Authorization": f"Bearer {lawyer_token}"}
+
+    patch_res = client.patch("/api/consultations/99999/status", json={"status": "CANCELLED"}, headers=lawyer_headers)
     assert patch_res.status_code == 404
 

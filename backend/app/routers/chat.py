@@ -33,18 +33,36 @@ def chat_direct(
     Direct legal question endpoint connecting RAG pipeline to LLM.
     Returns structured plain-language legal explanation with citations.
     """
-    user = current_user or _get_or_create_demo_user(db)
-    
+    user = current_user
+    conv_id = request.conversation_id
+    msg_id = None
+
+    # Validate conversation ownership if conversation_id is specified
+    if conv_id:
+        conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+        if not conv:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Conversation with ID {conv_id} was not found."
+            )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required to append to an existing conversation."
+            )
+        if user.role != UserRole.ADMIN and conv.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to append to this conversation."
+            )
+
     # 1. Run AI Service with RAG
     ai_result = default_ai_service.ask_question(
         question=request.message,
         language=request.language or "English"
     )
 
-    conv_id = request.conversation_id
-    msg_id = None
-
-    # 2. If user or conversation context exists, record messages in DB
+    # 2. If authenticated user, record messages in their conversation history
     if user:
         if not conv_id:
             conv = Conversation(

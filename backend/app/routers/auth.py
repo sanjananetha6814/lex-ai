@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.user import User, UserProfile
+from app.models.user import User, UserProfile, UserRole
 from app.schemas.auth import UserRegister, UserLogin, UserResponse, TokenResponse
 from app.auth import (
     verify_password,
@@ -14,6 +14,13 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(user_in: UserRegister, db: Session = Depends(get_db)):
+    # Disallow privilege escalation: public registration cannot create ADMIN accounts
+    if user_in.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration with administrative privileges is not permitted."
+        )
+
     # Check if email is already registered
     existing_user = db.query(User).filter(User.email == user_in.email.lower()).first()
     if existing_user:
@@ -22,12 +29,13 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
             detail="A user with this email address already exists."
         )
 
-    # Create new user and profile
+    # Public registration strictly assigns USER role.
+    # Advocate accounts require controlled verification/promotion by system administrators.
     hashed_pwd = get_password_hash(user_in.password)
     new_user = User(
         email=user_in.email.lower(),
         password_hash=hashed_pwd,
-        role=user_in.role,
+        role=UserRole.USER,
         is_active=True
     )
     db.add(new_user)

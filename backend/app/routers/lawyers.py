@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.lawyer import Lawyer, LawyerProfile
 from app.models.notification import Review, Notification
-from app.models.user import User
+from app.models.consultation import Consultation, ConsultationStatus
+from app.models.user import User, UserRole
 from app.schemas.lawyer import LawyerResponse, ReviewCreate, ReviewResponse
-from app.auth import get_current_user_optional
+from app.auth import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/lawyers", tags=["Lawyers"])
 
@@ -65,8 +66,15 @@ def add_lawyer_review(
     lawyer_id: int,
     review_in: ReviewCreate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user)
 ):
+    # Require verified consultation session to prevent sybil review bombing
+    if not review_in.consultation_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A valid consultation ID is required to submit a verified review."
+        )
+
     lawyer = db.query(Lawyer).options(joinedload(Lawyer.profile)).filter(Lawyer.id == lawyer_id).first()
     if not lawyer:
         raise HTTPException(
@@ -74,17 +82,56 @@ def add_lawyer_review(
             detail=f"Lawyer with ID {lawyer_id} was not found."
         )
 
-    client_name = "Verified Client"
-    user_id = None
-    if current_user:
-        user_id = current_user.id
-        if current_user.profile and current_user.profile.full_name:
-            client_name = current_user.profile.full_name
+    consultation = (
+        db.query(Consultation)
+        .options(joinedload(Consultation.review))
+        .filter(Consultation.id == review_in.consultation_id)
+        .first()
+    )
+    if not consultation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Consultation with ID {review_in.consultation_id} was not found."
+        )
+
+    if consultation.lawyer_id != lawyer_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The specified consultation does not belong to this advocate."
+        )
+
+    # Check caller is the client of the consultation or admin
+    is_client = (
+        (consultation.user_id and consultation.user_id == current_user.id)
+        or (consultation.client_email.lower() == current_user.email.lower())
+        or current_user.role == UserRole.ADMIN
+    )
+    if not is_client:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to review this consultation."
+        )
+
+    if consultation.status != ConsultationStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reviews can only be submitted for completed consultations."
+        )
+
+    if consultation.review is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This consultation has already been reviewed."
+        )
+
+    client_name = consultation.client_name
+    if current_user.profile and current_user.profile.full_name:
+        client_name = current_user.profile.full_name
 
     new_review = Review(
         lawyer_id=lawyer_id,
-        user_id=user_id,
-        consultation_id=review_in.consultation_id,
+        user_id=current_user.id,
+        consultation_id=consultation.id,
         client_name=client_name,
         rating=review_in.rating,
         comment=review_in.comment.strip(),
