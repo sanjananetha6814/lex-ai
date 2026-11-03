@@ -20,6 +20,9 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Enforce production security guardrails
+    settings.validate_production_security()
+
     # Startup: ensure tables exist and seed initial data
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
@@ -65,11 +68,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     for err in exc.errors():
         loc = " -> ".join([str(l) for l in err.get("loc", [])])
         errors.append(f"{loc}: {err.get('msg', 'Invalid value')}")
+    status_code = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", status.HTTP_422_UNPROCESSABLE_ENTITY)
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status_code,
         content={
             "error": True,
-            "status_code": status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "status_code": status_code,
             "message": "Validation Error",
             "details": errors
         }

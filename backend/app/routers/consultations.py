@@ -13,7 +13,7 @@ from app.schemas.consultation import (
     ConsultationStatusUpdate,
 )
 from app.schemas.lawyer import ReviewCreate, ReviewResponse
-from app.auth import get_current_user_optional
+from app.auth import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/consultations", tags=["Consultations"])
 
@@ -136,6 +136,10 @@ def get_consultations(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
+    # Security requirement: anonymous requests must not leak consultation records
+    if not current_user:
+        return []
+
     query = (
         db.query(Consultation)
         .options(
@@ -144,25 +148,26 @@ def get_consultations(
         )
     )
 
-    if current_user:
-        if current_user.role == UserRole.ADMIN:
-            if lawyer_id:
-                query = query.filter(Consultation.lawyer_id == lawyer_id)
-        elif current_user.role == UserRole.LAWYER:
-            matched_lawyer = None
-            if current_user.lawyer_account:
-                matched_lawyer = current_user.lawyer_account
-            else:
-                matched_lawyer = db.query(Lawyer).filter(Lawyer.email == current_user.email).first()
-
-            if matched_lawyer:
-                query = query.filter(Consultation.lawyer_id == matched_lawyer.id)
-            elif lawyer_id:
-                query = query.filter(Consultation.lawyer_id == lawyer_id)
+    if current_user.role == UserRole.ADMIN:
+        if lawyer_id:
+            query = query.filter(Consultation.lawyer_id == lawyer_id)
+    elif current_user.role == UserRole.LAWYER:
+        matched_lawyer = None
+        if current_user.lawyer_account:
+            matched_lawyer = current_user.lawyer_account
         else:
-            query = query.filter(Consultation.user_id == current_user.id)
-    elif lawyer_id:
-        query = query.filter(Consultation.lawyer_id == lawyer_id)
+            matched_lawyer = db.query(Lawyer).filter(Lawyer.email == current_user.email).first()
+
+        if matched_lawyer:
+            query = query.filter(Consultation.lawyer_id == matched_lawyer.id)
+        else:
+            return []
+    else:
+        # Regular clients only see their own consultations
+        query = query.filter(
+            (Consultation.user_id == current_user.id) |
+            (Consultation.client_email == current_user.email.lower())
+        )
 
     if status:
         query = query.filter(Consultation.status == status)
@@ -176,6 +181,12 @@ def get_consultation(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view consultation details."
+        )
+
     consultation = (
         db.query(Consultation)
         .options(
@@ -192,9 +203,25 @@ def get_consultation(
             detail=f"Consultation with ID {consultation_id} was not found."
         )
 
-    # If user is logged in as regular user, check access
-    if current_user and current_user.role == UserRole.USER:
-        if consultation.user_id and consultation.user_id != current_user.id:
+    # Ownership & access enforcement
+    if current_user.role == UserRole.ADMIN:
+        pass
+    elif current_user.role == UserRole.LAWYER:
+        matched_lawyer = (
+            current_user.lawyer_account
+            or db.query(Lawyer).filter(Lawyer.email == current_user.email).first()
+        )
+        if not matched_lawyer or consultation.lawyer_id != matched_lawyer.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view consultations for another advocate."
+            )
+    else:
+        is_owner = (
+            (consultation.user_id and consultation.user_id == current_user.id)
+            or (consultation.client_email.lower() == current_user.email.lower())
+        )
+        if not is_owner:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to view this consultation."
@@ -207,7 +234,7 @@ def update_consultation_status(
     consultation_id: int,
     status_in: ConsultationStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user)
 ):
     consultation = (
         db.query(Consultation)
@@ -225,18 +252,41 @@ def update_consultation_status(
             detail=f"Consultation with ID {consultation_id} was not found."
         )
 
-    # If logged in as lawyer, check they don't modify other lawyers' consultations
-    if current_user and current_user.role == UserRole.LAWYER:
+    # Role-based status transition authorization
+    if current_user.role == UserRole.ADMIN:
+        pass
+    elif current_user.role == UserRole.LAWYER:
         lawyer_id = current_user.lawyer_account.id if current_user.lawyer_account else None
         if not lawyer_id:
             matched = db.query(Lawyer).filter(Lawyer.email == current_user.email).first()
             if matched:
                 lawyer_id = matched.id
-        if lawyer_id and consultation.lawyer_id != lawyer_id:
+        if not lawyer_id or consultation.lawyer_id != lawyer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to update consultations for another advocate."
             )
+    elif current_user.role == UserRole.USER:
+        is_client = (
+            (consultation.user_id and consultation.user_id == current_user.id)
+            or (consultation.client_email.lower() == current_user.email.lower())
+        )
+        if not is_client:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to modify this consultation."
+            )
+        # Clients are strictly restricted to cancelling their consultations
+        if status_in.status != ConsultationStatus.CANCELLED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Clients are only permitted to cancel their consultations."
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this consultation."
+        )
 
     consultation.status = status_in.status
     db.commit()

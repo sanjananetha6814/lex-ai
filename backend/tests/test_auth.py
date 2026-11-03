@@ -14,7 +14,8 @@ def test_register_user_success(client):
     assert "access_token" in data
     assert data["token_type"] == "bearer"
     assert data["user"]["email"] == "test.lawyer@example.com"
-    assert data["user"]["role"] == "LAWYER"
+    # Security requirement: public registration strictly assigns USER role
+    assert data["user"]["role"] == "USER"
     assert data["user"]["profile"]["full_name"] == "Adv. Test Lawyer"
 
 def test_register_duplicate_email(client):

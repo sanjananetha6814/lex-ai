@@ -44,10 +44,18 @@ def test_review_completed_consultation_flow(client):
     )
     assert early_review_res.status_code == 400
 
-    # 5. Mark consultation as COMPLETED
+    # 5. Mark consultation as COMPLETED by authorized advocate
+    lawyer_login = client.post("/api/auth/login", json={
+        "email": "ananya.rao@lexai.directory",
+        "password": "LawyerPass123!"
+    })
+    lawyer_token = lawyer_login.json()["access_token"]
+    lawyer_headers = {"Authorization": f"Bearer {lawyer_token}"}
+
     update_res = client.patch(
         f"/api/consultations/{consultation_id}/status",
-        json={"status": "COMPLETED"}
+        json={"status": "COMPLETED"},
+        headers=lawyer_headers
     )
     assert update_res.status_code == 200
     assert update_res.json()["status"] == "COMPLETED"
