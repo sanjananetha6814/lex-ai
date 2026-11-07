@@ -23,8 +23,13 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # Copy backend application source and database migration configurations
 COPY backend /app
 
-# Ensure uploads directory exists
-RUN mkdir -p /app/uploads
+# Create an unprivileged non-root system user and configure permissions
+RUN groupadd -g 1001 lexai && \
+    useradd -u 1001 -g lexai -s /bin/bash -m lexai && \
+    mkdir -p /app/uploads && \
+    chown -R lexai:lexai /app
+
+USER lexai
 
 # Expose API port
 EXPOSE 8000

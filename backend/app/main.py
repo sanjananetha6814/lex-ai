@@ -129,8 +129,9 @@ def root():
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
     """
-    Production health check verifying API readiness and active database connectivity.
-    Reports status, active database engine/dialect, environment, and version.
+    Production health check verifying API readiness, active database connectivity,
+    and distributed cache backend status.
+    Reports status, active database engine/dialect, cache backend, environment, and version.
     """
     try:
         db.execute(text("SELECT 1"))
@@ -145,10 +146,32 @@ def health_check(db: Session = Depends(get_db)):
                 "error": str(e)
             }
         )
+
+    from app.cache import cache_manager
+    cache_backend = "redis_connected" if cache_manager._redis_available else "in_memory_fallback"
+
     return {
         "status": "healthy",
         "database": db_status,
         "database_engine": engine.dialect.name,
+        "cache": cache_backend,
         "environment": settings.ENVIRONMENT,
         "version": settings.VERSION
+    }
+
+@app.get("/metrics")
+def metrics():
+    """
+    Basic runtime and resource telemetry endpoint for operational monitoring.
+    """
+    from app.cache import cache_manager
+    return {
+        "project": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "environment": settings.ENVIRONMENT,
+        "database_engine": engine.dialect.name,
+        "pool_size": settings.DB_POOL_SIZE,
+        "max_overflow": settings.DB_MAX_OVERFLOW,
+        "cache_backend": "redis" if cache_manager._redis_available else "in_memory",
+        "rate_limiter_limit": settings.AUTH_RATE_LIMIT_LOGIN,
     }

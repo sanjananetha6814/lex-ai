@@ -32,6 +32,7 @@ storage/
 backend/storage/
 results/
 staging/
+backups/
 *.dump
 
 # Node & Build artifacts

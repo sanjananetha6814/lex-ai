@@ -136,3 +136,29 @@ def test_docker_compose_port_isolation():
                     )
             else:
                 in_ports_section = False
+
+def test_docker_compose_production_hardening():
+    """Verify log rotation, certbot, and mandatory environment variables in compose."""
+    with open("docker-compose.yml", "r") as f:
+        compose_text = f.read()
+
+    # Log rotation
+    assert 'max-size: "50m"' in compose_text
+    assert 'max-file: "5"' in compose_text
+
+    # Certbot renewal companion
+    assert "certbot-www:/var/www/certbot" in compose_text
+    assert "container_name: lexai-certbot" in compose_text
+
+    # No insecure fallback secrets
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?FATAL" in compose_text
+    assert "SECRET_KEY: ${SECRET_KEY:?FATAL" in compose_text
+    assert "REDIS_PASSWORD: ${REDIS_PASSWORD:?FATAL" in compose_text
+
+def test_dockerfile_runs_as_non_root():
+    """Verify Dockerfile creates and executes under an unprivileged user."""
+    with open("Dockerfile", "r") as f:
+        dockerfile_text = f.read()
+
+    assert "useradd" in dockerfile_text
+    assert "USER lexai" in dockerfile_text
