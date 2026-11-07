@@ -1,0 +1,166 @@
+services:
+  # -----------------------------------------------------------------------
+  # PostgreSQL Database Service
+  # -----------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: lexai-postgres
+    restart: unless-stopped
+    command: >
+      postgres
+      -c max_connections=250
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c work_mem=16MB
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lexai}
+      POSTGRES_USER: ${POSTGRES_USER:-lexai_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lexai_secure_password_2026}
+    expose:
+      - "5432"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lexai_user} -d ${POSTGRES_DB:-lexai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lexai-net
+
+  # -----------------------------------------------------------------------
+  # PgBouncer Connection Pooler Service (Transaction Pooling)
+  # -----------------------------------------------------------------------
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.22.0
+    container_name: lexai-pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_USER: ${POSTGRES_USER:-lexai_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-lexai_secure_password_2026}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-lexai}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 50
+      MIN_POOL_SIZE: 10
+      RESERVE_POOL_SIZE: 15
+      MAX_DB_CONNECTIONS: 75
+      SERVER_IDLE_TIMEOUT: 600
+      AUTH_TYPE: scram-sha-256
+    expose:
+      - "6432"
+    ports:
+      - "127.0.0.1:6432:6432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - lexai-net
+
+  # -----------------------------------------------------------------------
+  # Redis Shared Cache Service (Multi-Worker Consistency & Rate Limiting)
+  # -----------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: lexai-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    expose:
+      - "6379"
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - lexai-net
+
+  # -----------------------------------------------------------------------
+  # LexAI Backend API Service (Multi-Worker FastAPI)
+  # -----------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lexai-api
+    restart: unless-stopped
+    expose:
+      - "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - uploadsdata:/app/uploads
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-lexai_user}:${POSTGRES_PASSWORD:-lexai_secure_password_2026}@pgbouncer:6432/${POSTGRES_DB:-lexai}
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-lexai_user}:${POSTGRES_PASSWORD:-lexai_secure_password_2026}@db:5432/${POSTGRES_DB:-lexai}
+      REDIS_URL: redis://redis:6379/0
+      DB_POOL_SIZE: 20
+      DB_MAX_OVERFLOW: 10
+      DB_POOL_TIMEOUT: 30
+      DB_POOL_RECYCLE: 1800
+      SECRET_KEY: ${SECRET_KEY:-lexai-production-super-secret-key-32-chars-minimum!}
+      FORWARDED_ALLOW_IPS: "127.0.0.1,172.16.0.0/12,10.0.0.0/8"
+      AUTH_RATE_LIMIT_LOGIN: 10
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      CORS_ORIGINS: '["https://lex-ai-rust-five.vercel.app","http://localhost:5173","http://127.0.0.1:5173"]'
+    depends_on:
+      db:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - lexai-net
+
+  # -----------------------------------------------------------------------
+  # Nginx Reverse Proxy (SSL Termination, Rate Limiting, HTTP->HTTPS Redirection)
+  # -----------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: lexai-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 80 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - lexai-net
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+  uploadsdata:
+    driver: local
+
+networks:
+  lexai-net:
+    driver: bridge

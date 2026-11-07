@@ -221,6 +221,10 @@ LAWYERS_DATA = [
 ]
 
 def seed_database(db: Session):
+    # Short-circuit if database is already seeded
+    if db.query(User).filter(User.email == "alex.morgan@workspace.lexai").first():
+        return
+
     # Check if admin user exists
     admin = db.query(User).filter(User.email == "admin@lexai.internal").first()
     if not admin:

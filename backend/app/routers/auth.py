@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.user import User, UserProfile, UserRole
 from app.schemas.auth import UserRegister, UserLogin, UserResponse, TokenResponse
@@ -7,8 +7,10 @@ from app.auth import (
     verify_password,
     get_password_hash,
     create_access_token,
-    get_current_user
+    get_current_user,
+    DUMMY_PASSWORD_HASH
 )
+from app.rate_limiter import auth_rate_limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -62,27 +64,57 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
     )
 
 @router.post("/login", response_model=TokenResponse)
-def login(credentials: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == credentials.email.lower()).first()
-    if not user or not verify_password(credentials.password, user.password_hash):
+def login(credentials: UserLogin, request: Request, db: Session = Depends(get_db)):
+    # 0. Enforce IP-based rate limiting across all workers before any database access or password verification
+    auth_rate_limiter.check_rate_limit(request, key_prefix="login")
+
+    # 1. Fetch user & profile authentication data using a short-lived database query
+    try:
+        user = db.query(User).options(joinedload(User.profile)).filter(
+            User.email == credentials.email.lower()
+        ).first()
+
+        if user:
+            user_id = user.id
+            user_role = user.role.value
+            user_is_active = user.is_active
+            password_hash = user.password_hash
+            user_response = UserResponse.model_validate(user)
+        else:
+            user_id = None
+            user_role = None
+            user_is_active = False
+            password_hash = DUMMY_PASSWORD_HASH
+            user_response = None
+    finally:
+        # 2. Immediately close session and return the connection to the pool BEFORE Argon2 verification
+        db.close()
+
+    # 3. Perform CPU-intensive Argon2id password verification with 0 database connections checked out
+    is_valid = verify_password(credentials.password, password_hash)
+
+    # 4. Enforce timing-safe authentication rejection for unknown users or invalid passwords
+    if not is_valid or not user_response:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not user.is_active:
+    # 5. Enforce account status check
+    if not user_is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This user account has been deactivated."
         )
 
-    access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
+    # 6. Issue access token
+    access_token = create_access_token(data={"sub": str(user_id), "role": user_role})
 
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        user=UserResponse.model_validate(user)
+        user=user_response
     )
 
 @router.get("/me", response_model=UserResponse)

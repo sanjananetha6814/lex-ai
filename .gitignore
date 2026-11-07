@@ -2,9 +2,17 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 backend/.env
 frontend/.env
 frontend/.env.local
+
+# SSL certificates and private keys
+*.key
+*.crt
+*.pem
+nginx/ssl/*
+!nginx/ssl/.gitkeep
 
 # Python
 __pycache__/
@@ -22,6 +30,9 @@ venv/
 uploads/
 storage/
 backend/storage/
+results/
+staging/
+*.dump
 
 # Node & Build artifacts
 node_modules/

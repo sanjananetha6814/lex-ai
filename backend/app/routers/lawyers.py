@@ -8,6 +8,12 @@ from app.models.consultation import Consultation, ConsultationStatus
 from app.models.user import User, UserRole
 from app.schemas.lawyer import LawyerResponse, ReviewCreate, ReviewResponse
 from app.auth import get_current_user, get_current_user_optional
+from app.cache import (
+    cache_manager,
+    get_lawyer_list_cache_key,
+    get_lawyer_detail_cache_key,
+    invalidate_lawyer_caches
+)
 
 router = APIRouter(prefix="/lawyers", tags=["Lawyers"])
 
@@ -20,6 +26,12 @@ def get_lawyers(
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
+    # Check cache for public directory listing
+    cache_key = get_lawyer_list_cache_key(search, city, specialty, skip, limit)
+    cached_result = cache_manager.get(cache_key)
+    if cached_result is not None:
+        return cached_result
+
     query = db.query(Lawyer).options(
         joinedload(Lawyer.profile),
         joinedload(Lawyer.reviews)
@@ -41,10 +53,18 @@ def get_lawyers(
         query = query.filter(LawyerProfile.specialty.ilike(f"%{specialty.strip()}%"))
 
     lawyers = query.order_by(Lawyer.id.asc()).offset(skip).limit(limit).all()
-    return lawyers
+    serialized = [LawyerResponse.model_validate(l) for l in lawyers]
+    cache_manager.set(cache_key, serialized, ttl=60)
+    return serialized
 
 @router.get("/{lawyer_id}", response_model=LawyerResponse)
 def get_lawyer_by_id(lawyer_id: int, db: Session = Depends(get_db)):
+    # Check cache for public lawyer detail
+    cache_key = get_lawyer_detail_cache_key(lawyer_id)
+    cached_result = cache_manager.get(cache_key)
+    if cached_result is not None:
+        return cached_result
+
     lawyer = (
         db.query(Lawyer)
         .options(
@@ -59,7 +79,9 @@ def get_lawyer_by_id(lawyer_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Lawyer with ID {lawyer_id} was not found."
         )
-    return lawyer
+    serialized = LawyerResponse.model_validate(lawyer)
+    cache_manager.set(cache_key, serialized, ttl=60)
+    return serialized
 
 @router.post("/{lawyer_id}/reviews", response_model=ReviewResponse, status_code=status.HTTP_201_CREATED)
 def add_lawyer_review(
@@ -168,4 +190,6 @@ def add_lawyer_review(
 
     db.commit()
     db.refresh(new_review)
+    # Invalidate public lawyer caches upon review submission
+    invalidate_lawyer_caches(lawyer_id)
     return new_review

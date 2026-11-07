@@ -14,6 +14,7 @@ from app.schemas.consultation import (
 )
 from app.schemas.lawyer import ReviewCreate, ReviewResponse
 from app.auth import get_current_user, get_current_user_optional
+from app.cache import invalidate_lawyer_caches
 
 router = APIRouter(prefix="/consultations", tags=["Consultations"])
 
@@ -412,5 +413,7 @@ def review_consultation(
 
     db.commit()
     db.refresh(new_review)
+    # Invalidate public lawyer caches upon review submission
+    invalidate_lawyer_caches(consultation.lawyer_id)
 
     return new_review

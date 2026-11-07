@@ -19,7 +19,8 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
-    url = settings.DATABASE_URL
+    # Prefer direct PostgreSQL connection for DDL migrations to bypass PgBouncer
+    url = os.getenv("MIGRATION_DATABASE_URL", settings.DATABASE_URL)
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -32,7 +33,9 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL
+    # Prefer direct PostgreSQL connection for DDL migrations to bypass PgBouncer
+    migration_url = os.getenv("MIGRATION_DATABASE_URL", settings.DATABASE_URL)
+    configuration["sqlalchemy.url"] = migration_url
     
     connect_args = {}
     if settings.DATABASE_URL.startswith("sqlite"):

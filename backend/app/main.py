@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Depends, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.config import settings
-from app.database import engine, SessionLocal, Base
+from app.database import engine, SessionLocal, Base, get_db
 from app.models import *
 from app.seed import seed_database
 from app.routers import (
@@ -23,15 +25,30 @@ async def lifespan(app: FastAPI):
     # Enforce production security guardrails
     settings.validate_production_security()
 
-    # Startup: ensure tables exist and seed initial data
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        seed_database(db)
-    finally:
-        db.close()
+    # In development/test with SQLite, ensure tables exist for convenience.
+    # In production and staging, DDL and migrations are managed exclusively by
+    # separate pre-deployment steps (Alembic) to prevent multi-worker concurrency hazards.
+    is_prod_or_staging = settings.ENVIRONMENT.lower() in ["production", "prod", "staging"]
+    if not is_prod_or_staging and settings.DATABASE_URL.startswith("sqlite"):
+        try:
+            Base.metadata.create_all(bind=engine)
+            db = SessionLocal()
+            try:
+                seed_database(db)
+            except Exception:
+                db.rollback()
+            finally:
+                db.close()
+        except Exception:
+            pass
+
     yield
-    # Shutdown logic if any
+
+    # Graceful shutdown: dispose engine connection pool
+    try:
+        engine.dispose()
+    except Exception:
+        pass
 
 app = FastAPI(
     title="LexAI API",
@@ -81,13 +98,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
+    is_prod = settings.ENVIRONMENT.lower() in ["production", "prod"]
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "error": True,
             "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
             "message": "An internal server error occurred.",
-            "detail": str(exc) if not isinstance(exc, AssertionError) else "Internal check failure"
+            "detail": "Internal server error" if is_prod else (str(exc) if not isinstance(exc, AssertionError) else "Internal check failure")
         }
     )
 
@@ -106,4 +124,31 @@ def root():
         "version": settings.VERSION,
         "status": "online",
         "documentation": "/docs"
+    }
+
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    """
+    Production health check verifying API readiness and active database connectivity.
+    Reports status, active database engine/dialect, environment, and version.
+    """
+    try:
+        db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "unhealthy",
+                "database": "disconnected",
+                "database_engine": engine.dialect.name,
+                "error": str(e)
+            }
+        )
+    return {
+        "status": "healthy",
+        "database": db_status,
+        "database_engine": engine.dialect.name,
+        "environment": settings.ENVIRONMENT,
+        "version": settings.VERSION
     }

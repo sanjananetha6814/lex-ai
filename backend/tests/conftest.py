@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.database import Base, get_db
 from app.main import app
 from app.seed import seed_database
+from app.rate_limiter import auth_rate_limiter
 
 # Use test-specific SQLite database
 TEST_DB_URL = "sqlite:///./test_lexai.db"
@@ -30,6 +31,12 @@ def setup_test_db():
     Base.metadata.drop_all(bind=test_engine)
     if os.path.exists("./test_lexai.db"):
         os.remove("./test_lexai.db")
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter_fixture():
+    auth_rate_limiter.reset()
+    yield
+    auth_rate_limiter.reset()
 
 @pytest.fixture
 def db():

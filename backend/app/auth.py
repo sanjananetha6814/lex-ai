@@ -11,6 +11,8 @@ from app.database import get_db
 from app.models.user import User, UserRole
 
 pwd_hasher = PasswordHasher()
+# Pre-computed dummy Argon2 hash used for unknown users to eliminate timing side-channels / user enumeration
+DUMMY_PASSWORD_HASH = pwd_hasher.hash("lexai-timing-attack-protection-dummy-hash-2026")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/login", auto_error=False)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

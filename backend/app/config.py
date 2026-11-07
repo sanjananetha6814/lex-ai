@@ -20,14 +20,34 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     
-    # Database configuration
-    # Can be set to PostgreSQL (e.g. postgresql+psycopg2://user:pass@localhost:5432/lexai)
+    # Reverse Proxy & Rate Limiting
+    FORWARDED_ALLOW_IPS: str = Field(
+        default_factory=lambda: os.getenv("FORWARDED_ALLOW_IPS", "127.0.0.1,172.16.0.0/12,10.0.0.0/8")
+    )
+    AUTH_RATE_LIMIT_LOGIN: int = Field(
+        default_factory=lambda: int(os.getenv("AUTH_RATE_LIMIT_LOGIN", "10"))
+    )
+    
+    # Database connection & pool configuration
+    # Supports PostgreSQL (e.g. postgresql+psycopg2://user:pass@localhost:5432/lexai)
     # or SQLite (sqlite:///./lexai.db)
     DATABASE_URL: str = Field(
         default_factory=lambda: os.getenv(
             "DATABASE_URL",
             "sqlite:///./lexai.db"
         )
+    )
+    DB_POOL_SIZE: int = Field(
+        default_factory=lambda: int(os.getenv("DB_POOL_SIZE", os.getenv("DATABASE_POOL_SIZE", "50")))
+    )
+    DB_MAX_OVERFLOW: int = Field(
+        default_factory=lambda: int(os.getenv("DB_MAX_OVERFLOW", os.getenv("DATABASE_MAX_OVERFLOW", "50")))
+    )
+    DB_POOL_TIMEOUT: int = Field(
+        default_factory=lambda: int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    )
+    DB_POOL_RECYCLE: int = Field(
+        default_factory=lambda: int(os.getenv("DB_POOL_RECYCLE", "1800"))
     )
     
     # CORS: Explicitly whitelisted trusted origins without wildcard
@@ -41,10 +61,10 @@ class Settings(BaseSettings):
     def validate_production_security(self) -> None:
         """
         Enforce strict security guardrails before application startup.
-        In production, fail startup immediately if insecure default secret or wildcards are detected.
+        In production and staging, fail startup immediately if insecure default secret or wildcards are detected.
         """
-        is_prod = self.ENVIRONMENT.lower() in ["production", "prod"]
-        if is_prod:
+        is_prod_or_staging = self.ENVIRONMENT.lower() in ["production", "prod", "staging"]
+        if is_prod_or_staging:
             if not self.SECRET_KEY or self.SECRET_KEY == self.DEFAULT_INSECURE_SECRET or len(self.SECRET_KEY) < 32:
                 raise RuntimeError(
                     "FATAL SECURITY CONFIGURATION: In production mode, SECRET_KEY must be configured "
