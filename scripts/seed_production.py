@@ -106,16 +106,6 @@ def seed_production():
                     city=data["city"],
                     state=data["state"],
                     bar_council_id=data["bar_council_id"],
-                    specialty=data["specialty"],
-                    experience_years=data["experience_years"],
-                    consultation_fee=data["consultation_fee"],
-                    fee_number=data["fee_number"],
-                    languages=data["languages"],
-                    availability_status=data["availability_status"],
-                    rating=data["rating"],
-                    review_count=data["review_count"],
-                    initials=data["initials"],
-                    tone=data["tone"],
                     is_verified=True
                 )
                 db.add(lawyer)
@@ -123,12 +113,22 @@ def seed_production():
 
                 profile = LawyerProfile(
                     lawyer_id=lawyer.id,
+                    specialty=data["specialty"],
+                    experience_years=data["experience_years"],
+                    consultation_fee=data["consultation_fee"],
+                    fee_number=data["fee_number"],
+                    languages=data["languages"],
                     bio=data["bio"],
                     practice_summary=data["practice_summary"],
-                    practice_areas=",".join(data["practice_areas"]),
-                    qualifications=",".join(data["qualifications"]),
+                    practice_areas=data["practice_areas"],
+                    qualifications=data["qualifications"],
+                    availability_status=data["availability_status"],
                     next_slot=data["next_slot"],
-                    available_slots=",".join(data["slots"])
+                    rating=data["rating"],
+                    review_count=data["review_count"],
+                    initials=data["initials"],
+                    tone=data["tone"],
+                    slots=data["slots"]
                 )
                 db.add(profile)
                 seeded_count += 1

@@ -1,6 +1,10 @@
 import os
 import time
 import pytest
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from app.cache import CacheManager, get_lawyer_list_cache_key, get_lawyer_detail_cache_key
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
