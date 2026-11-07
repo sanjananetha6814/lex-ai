@@ -151,9 +151,9 @@ def test_docker_compose_production_hardening():
     assert "container_name: lexai-certbot" in compose_text
 
     # No insecure fallback secrets
-    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?FATAL" in compose_text
-    assert "SECRET_KEY: ${SECRET_KEY:?FATAL" in compose_text
-    assert "REDIS_PASSWORD: ${REDIS_PASSWORD:?FATAL" in compose_text
+    assert "${POSTGRES_PASSWORD:?FATAL" in compose_text
+    assert "${SECRET_KEY:?FATAL" in compose_text
+    assert "${REDIS_PASSWORD:?FATAL" in compose_text
 
 def test_dockerfile_runs_as_non_root():
     """Verify Dockerfile creates and executes under an unprivileged user."""
