@@ -848,8 +848,14 @@ export default function LexAI() {
               ['documents', 'Documents', FileText],
               ['saved', 'Saved answers', Bookmark],
               ['lawyers', 'Lawyer connect', UserRoundCheck],
-              ...(currentUser?.role === 'LAWYER'
-                ? [['lawyer-dashboard', 'Advocate Portal', Briefcase]]
+              ...(currentUser?.role === 'LAWYER' || currentUser?.role === 'ADMIN'
+                ? [
+                    [
+                      'lawyer-dashboard',
+                      currentUser?.role === 'ADMIN' ? 'Admin Portal' : 'Advocate Portal',
+                      Briefcase,
+                    ],
+                  ]
                 : []),
             ] as [string, string, typeof MessageCircle][]
           ).map(([id, label, Icon]) => (
@@ -905,6 +911,8 @@ export default function LexAI() {
               <small>
                 {currentUser?.role === 'LAWYER'
                   ? 'Advocate Profile'
+                  : currentUser?.role === 'ADMIN'
+                  ? 'Administrator'
                   : isDemo
                   ? 'Demo Workspace'
                   : 'Personal Workspace'}
@@ -967,7 +975,8 @@ export default function LexAI() {
                     documents: 'Documents',
                     saved: 'Saved Answers',
                     lawyers: 'Lawyer Connect',
-                    'lawyer-dashboard': 'Advocate Portal',
+                    'lawyer-dashboard':
+                      currentUser?.role === 'ADMIN' ? 'Admin Portal' : 'Advocate Portal',
                     settings: 'Settings',
                   } as Record<string, string>)[view] || 'Lawyer Connect'}
                 </strong>
@@ -3414,15 +3423,19 @@ function LawyerDashboard({ currentUser, notify, onRefreshNotifications }: Lawyer
     <div className="lawyer-dashboard-view">
       <header className="page-head">
         <div>
-          <span className="kicker">LEGAL ADVOCATE WORKSPACE</span>
-          <h1>Advocate Portal</h1>
+          <span className="kicker">
+            {currentUser?.role === 'ADMIN' ? 'SYSTEM ADMINISTRATION' : 'LEGAL ADVOCATE WORKSPACE'}
+          </span>
+          <h1>{currentUser?.role === 'ADMIN' ? 'Admin Portal' : 'Advocate Portal'}</h1>
           <p>
-            Review inbound client consultation requests, verify legal matters, and manage
-            appointments.
+            {currentUser?.role === 'ADMIN'
+              ? 'Oversee all consultation bookings, client legal matters, and system status across the platform.'
+              : 'Review inbound client consultation requests, verify legal matters, and manage appointments.'}
           </p>
         </div>
         <div className="lawyer-badge-pill">
-          <Scale size={14} /> Bar Council Verified Advocate
+          <Scale size={14} />{' '}
+          {currentUser?.role === 'ADMIN' ? 'System Administrator' : 'Bar Council Verified Advocate'}
         </div>
       </header>
 

@@ -28,27 +28,6 @@ export async function getAuthToken(): Promise<string | null> {
       return cachedToken
     }
   } catch {}
-
-  try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'alex.morgan@workspace.lexai',
-        password: 'DemoUserPass123!'
-      })
-    })
-    if (res.ok) {
-      const data = (await res.json()) as LoginResponse
-      cachedToken = data.access_token
-      try {
-        window.sessionStorage?.setItem('lexai_token', cachedToken)
-      } catch {}
-      return cachedToken
-    }
-  } catch (err) {
-    console.warn('⚠️ [Auth] Unable to authenticate demo user:', err)
-  }
   return null
 }
 
@@ -126,8 +105,8 @@ export function logoutUser(): void {
 export async function fetchConversations(): Promise<Conversation[]> {
   try {
     const token = await getAuthToken()
-    const headers: HeadersInit = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (!token) return []
+    const headers: HeadersInit = { Authorization: `Bearer ${token}` }
     const res = await fetch(`${API_BASE}/conversations`, { headers })
     if (res.ok) {
       return (await res.json()) as Conversation[]
@@ -141,8 +120,8 @@ export async function fetchConversations(): Promise<Conversation[]> {
 export async function fetchConversation(conversationId: number | string): Promise<Conversation | null> {
   try {
     const token = await getAuthToken()
-    const headers: HeadersInit = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (!token) return null
+    const headers: HeadersInit = { Authorization: `Bearer ${token}` }
     const res = await fetch(`${API_BASE}/conversations/${conversationId}`, { headers })
     if (res.ok) {
       return (await res.json()) as Conversation
@@ -156,8 +135,11 @@ export async function fetchConversation(conversationId: number | string): Promis
 export async function createConversation(title: string, language = 'English'): Promise<Conversation | null> {
   try {
     const token = await getAuthToken()
-    const headers: HeadersInit = { 'Content-Type': 'application/json' }
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (!token) return null
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    }
     const res = await fetch(`${API_BASE}/conversations`, {
       method: 'POST',
       headers,
@@ -435,8 +417,8 @@ export async function analyzeDocument(filename: string): Promise<{
 export async function fetchLawyerConsultations(statusFilter: string | null = null): Promise<ConsultationResponse[]> {
   try {
     const token = await getAuthToken()
-    const headers: HeadersInit = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (!token) return []
+    const headers: HeadersInit = { Authorization: `Bearer ${token}` }
 
     let url = `${API_BASE}/consultations`
     if (statusFilter && statusFilter !== 'ALL') {
@@ -523,8 +505,8 @@ export async function submitConsultationReview(
 export async function fetchNotifications(unreadOnly = false): Promise<NotificationListResponse> {
   try {
     const token = await getAuthToken()
-    const headers: HeadersInit = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (!token) return { items: [], unread_count: 0 }
+    const headers: HeadersInit = { Authorization: `Bearer ${token}` }
 
     let url = `${API_BASE}/notifications`
     if (unreadOnly) url += '?unread_only=true'
@@ -542,8 +524,8 @@ export async function fetchNotifications(unreadOnly = false): Promise<Notificati
 export async function markNotificationRead(notificationId: number): Promise<NotificationItem | null> {
   try {
     const token = await getAuthToken()
-    const headers: HeadersInit = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (!token) return null
+    const headers: HeadersInit = { Authorization: `Bearer ${token}` }
 
     const res = await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
       method: 'PATCH',
@@ -561,8 +543,8 @@ export async function markNotificationRead(notificationId: number): Promise<Noti
 export async function markAllNotificationsRead(): Promise<MarkAllReadResponse> {
   try {
     const token = await getAuthToken()
-    const headers: HeadersInit = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (!token) return { success: false, marked_count: 0 }
+    const headers: HeadersInit = { Authorization: `Bearer ${token}` }
 
     const res = await fetch(`${API_BASE}/notifications/mark-all-read`, {
       method: 'POST',
